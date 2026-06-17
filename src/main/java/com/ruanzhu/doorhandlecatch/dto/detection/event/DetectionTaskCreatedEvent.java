@@ -1,0 +1,22 @@
+package com.ruanzhu.doorhandlecatch.dto.detection.event;
+
+import lombok.Builder;
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@Data
+@Builder
+public class DetectionTaskCreatedEvent {
+    private String eventId;
+    private String eventType;
+    private String eventTime;
+    private String taskId;
+    private String bucketName;
+    private String sourcePrefix;
+    private List<String> originalKeys;
+    private DetectionTaskEventCaptureInfo captureInfo;
+    private Integer modelId;
+    private BigDecimal threshold;
+}

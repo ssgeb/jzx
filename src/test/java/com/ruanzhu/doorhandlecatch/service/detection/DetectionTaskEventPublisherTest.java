@@ -1,0 +1,44 @@
+package com.ruanzhu.doorhandlecatch.service.detection;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruanzhu.doorhandlecatch.config.properties.KafkaTaskProperties;
+import com.ruanzhu.doorhandlecatch.dto.detection.event.DetectionTaskCreatedEvent;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
+
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class DetectionTaskEventPublisherTest {
+
+    @Mock
+    private KafkaTemplate<String, DetectionTaskCreatedEvent> kafkaTemplate;
+
+    @Mock
+    private KafkaTaskProperties properties;
+
+    @Test
+    void publishesCreatedEventUsingTaskIdAsKey() {
+        DetectionTaskEventPublisher publisher = new DetectionTaskEventPublisher(
+                kafkaTemplate,
+                properties,
+                new ObjectMapper()
+        );
+        KafkaTaskProperties.Topics topics = new KafkaTaskProperties.Topics();
+        topics.setTaskCreated("detection.task.created");
+        when(properties.isEnabled()).thenReturn(true);
+        when(properties.getTopics()).thenReturn(topics);
+
+        DetectionTaskCreatedEvent event = DetectionTaskCreatedEvent.builder()
+                .taskId("det_123")
+                .build();
+
+        publisher.publishCreated(event);
+
+        verify(kafkaTemplate).send("detection.task.created", "det_123", event);
+    }
+}

@@ -1,0 +1,226 @@
+package com.ruanzhu.doorhandlecatch.service.impl;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruanzhu.doorhandlecatch.common.BusinessException;
+import com.ruanzhu.doorhandlecatch.dto.ImageDetectionResponse;
+import com.ruanzhu.doorhandlecatch.dto.SingleImageDetectionResponse;
+import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
+import com.ruanzhu.doorhandlecatch.entity.ModelInfo;
+import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
+import com.ruanzhu.doorhandlecatch.mapper.ModelInfoMapper;
+import com.ruanzhu.doorhandlecatch.service.ImageInferenceService;
+import com.ruanzhu.doorhandlecatch.service.ModelService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class ImageDetectionServiceImplTest {
+
+    @Mock
+    private ModelInfoMapper modelInfoMapper;
+
+    @Mock
+    private DetectionTaskMapper detectionTaskMapper;
+
+    @Mock
+    private ModelService modelService;
+
+    @Mock
+    private ImageInferenceService imageInferenceService;
+
+    @Mock
+    private ImageDetectionAsyncService imageDetectionAsyncService;
+
+    @InjectMocks
+    private ImageDetectionServiceImpl imageDetectionService;
+
+    @TempDir
+    Path tempDir;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(imageDetectionService, "objectMapper", new ObjectMapper());
+        ReflectionTestUtils.setField(imageDetectionService, "maxImagesPerBatch", 200);
+        ReflectionTestUtils.setField(imageDetectionService, "maxImageBytes", 10L * 1024L * 1024L);
+    }
+
+    @Test
+    void processImageDetectionSchedulesAsyncExecutionInsteadOfRunningInline() {
+        ModelInfo modelInfo = new ModelInfo();
+        modelInfo.setModelId(7);
+        modelInfo.setModelName("demo");
+        modelInfo.setModelPath(tempDir.resolve("model.onnx").toString());
+        when(modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
+
+        ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
+        when(detectionTaskMapper.insert(taskCaptor.capture())).thenAnswer(invocation -> {
+            DetectionTask task = taskCaptor.getValue();
+            ReflectionTestUtils.setField(task, "id", 99L);
+            return 1;
+        });
+
+        ReflectionTestUtils.setField(imageDetectionService, "imageUploadDir", tempDir.resolve("images").toString());
+        ReflectionTestUtils.setField(imageDetectionService, "resultDir", tempDir.resolve("results").toString());
+        ReflectionTestUtils.setField(imageDetectionService, "annotatedDir", tempDir.resolve("annotated").toString());
+        ReflectionTestUtils.setField(imageDetectionService, "uploadDir", tempDir.resolve("images").toString());
+        ReflectionTestUtils.setField(imageDetectionService, "modelsDir", tempDir.resolve("models").toString());
+        ReflectionTestUtils.setField(imageDetectionService, "defaultModelFile", "default.onnx");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "files",
+                "sample.jpg",
+                "image/jpeg",
+                "demo-image".getBytes()
+        );
+
+        ImageDetectionResponse response = imageDetectionService.processImageDetection(
+                List.of(file),
+                7,
+                "COCO",
+                0.5f
+        );
+
+        assertEquals("PROCESSING", response.getStatus());
+        assertEquals(99L, response.getId());
+        verify(imageDetectionAsyncService, times(1))
+                .performDetectionAsync(any(DetectionTask.class), any(List.class), any(ModelInfo.class), any(String.class), any(Float.class));
+        assertNotNull(taskCaptor.getValue().getSourceOssPrefix());
+    }
+
+    @Test
+    void deleteDetectionDataRemovesAnnotatedDirectoryAlongsideSourceAndResult() throws Exception {
+        Path imageDir = tempDir.resolve("images").resolve("detect_001");
+        Path resultDir = tempDir.resolve("results").resolve("detect_001");
+        Path annotatedDir = tempDir.resolve("annotated").resolve("detect_001");
+        Files.createDirectories(imageDir);
+        Files.createDirectories(resultDir);
+        Files.createDirectories(annotatedDir);
+        Files.writeString(imageDir.resolve("source.jpg"), "src");
+        Files.writeString(resultDir.resolve("result.txt"), "result");
+        Files.writeString(annotatedDir.resolve("annotated.jpg"), "annotated");
+
+        DetectionTask task = new DetectionTask();
+        task.setId(10L);
+        task.setSourceOssPrefix(imageDir.toString());
+        task.setResultOssPrefix(resultDir.toString());
+        when(detectionTaskMapper.selectById(10L)).thenReturn(task);
+
+        imageDetectionService.deleteDetectionData(10L);
+
+        assertFalse(Files.exists(imageDir));
+        assertFalse(Files.exists(resultDir));
+        assertFalse(Files.exists(annotatedDir));
+        verify(detectionTaskMapper).deleteById(10L);
+    }
+
+    @Test
+    void processImageDetectionRejectsTooManyImagesBeforeCreatingTask() {
+        ReflectionTestUtils.setField(imageDetectionService, "maxImagesPerBatch", 1);
+
+        MockMultipartFile first = new MockMultipartFile("files", "a.jpg", "image/jpeg", "a".getBytes());
+        MockMultipartFile second = new MockMultipartFile("files", "b.jpg", "image/jpeg", "b".getBytes());
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> imageDetectionService.processImageDetection(List.of(first, second), 7, "COCO", 0.5f)
+        );
+
+        assertEquals("单次最多上传 1 张图片", exception.getMessage());
+    }
+
+    @Test
+    void processImageDetectionRejectsUnsupportedImageContentType() {
+        MockMultipartFile file = new MockMultipartFile(
+                "files",
+                "sample.jpg",
+                "text/plain",
+                "not-image".getBytes()
+        );
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> imageDetectionService.processImageDetection(List.of(file), 7, "COCO", 0.5f)
+        );
+
+        assertEquals("图片 Content-Type 不受支持: text/plain", exception.getMessage());
+    }
+
+    @Test
+    void detectImageRejectsOversizedImageWithUserFacingError() {
+        ReflectionTestUtils.setField(imageDetectionService, "maxImageBytes", 4L);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "sample.jpg",
+                "image/jpeg",
+                "too-large".getBytes()
+        );
+
+        SingleImageDetectionResponse response = imageDetectionService.detectImage(file, 7);
+
+        assertEquals("图片文件不能超过 4B", response.getErrorMessage());
+    }
+
+    @Test
+    void detectImagePersistsTaskStatisticsConsistentWithConfidenceThreshold() throws Exception {
+        ModelInfo modelInfo = new ModelInfo();
+        modelInfo.setModelId(7);
+        modelInfo.setModelName("demo");
+        modelInfo.setVersion("v1");
+        modelInfo.setModelPath(tempDir.resolve("model.onnx").toString());
+        when(modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
+        when(imageInferenceService.classify(any(Path.class), eq(modelInfo.getModelPath())))
+                .thenReturn(new ImageInferenceService.ClassificationResult("Bent", 0.2f, Map.of("Bent", 0.2f)));
+
+        ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
+        when(detectionTaskMapper.insert(taskCaptor.capture())).thenReturn(1);
+
+        ReflectionTestUtils.setField(imageDetectionService, "annotatedDir", tempDir.resolve("annotated").toString());
+        ReflectionTestUtils.setField(imageDetectionService, "uploadDir", tempDir.resolve("images").toString());
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "sample.jpg",
+                "image/jpeg",
+                "demo-image".getBytes()
+        );
+
+        SingleImageDetectionResponse response = imageDetectionService.detectImage(file, 7);
+
+        assertEquals("Bent", response.getCategory());
+        DetectionTask persistedTask = taskCaptor.getValue();
+        assertEquals(0, persistedTask.getSuccessfulImages());
+        assertEquals(1, persistedTask.getFailedImages());
+        assertEquals(BigDecimal.valueOf(0.5), persistedTask.getThreshold());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> statistics = new ObjectMapper().readValue(persistedTask.getStatisticsJson(), Map.class);
+        assertEquals(100.0, ((Number) statistics.get("missDetectionRate")).doubleValue());
+        assertTrue(persistedTask.getResultOssPrefix().contains("annotated"));
+    }
+}
