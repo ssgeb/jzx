@@ -15,12 +15,13 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     email VARCHAR(100),
     phone VARCHAR(20),
+    `role` VARCHAR(16) NOT NULL DEFAULT 'OPERATOR',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO users (id, username, password, email, phone)
-VALUES (1, 'admin', '$2b$12$1JubAveAPOmdM2wuxLsHAOGDkXOcAaUff2fraVjbpGcvz/.mrQdf6', 'admin@example.com', '13800138000');
+INSERT IGNORE INTO users (id, username, password, email, phone, role)
+VALUES (1, 'admin', '$2b$12$1JubAveAPOmdM2wuxLsHAOGDkXOcAaUff2fraVjbpGcvz/.mrQdf6', 'admin@example.com', '13800138000', 'ADMIN');
 
 -- ============================================================
 -- 模型管理表（model_id 直接作为主键）
@@ -102,6 +103,8 @@ WHERE NOT EXISTS (SELECT 1 FROM `model_management` LIMIT 1);
 CREATE TABLE IF NOT EXISTS `detection_task` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `task_id` VARCHAR(64) NOT NULL COMMENT '任务编号',
+    `dispatch_id` VARCHAR(64) DEFAULT NULL COMMENT '任务分发幂等编号',
+    `last_finished_event_id` VARCHAR(128) DEFAULT NULL COMMENT '最近完成事件编号',
     `workflow_uuid` VARCHAR(36) DEFAULT NULL COMMENT '工作流UUID，可在智能助手中引用',
     `task_type` VARCHAR(32) NOT NULL DEFAULT 'BATCH' COMMENT '任务类型',
     `batch_no` VARCHAR(128) DEFAULT NULL COMMENT '生产/采集批次号',
@@ -164,6 +167,7 @@ CREATE TABLE IF NOT EXISTS `detection_task` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_detection_task_id` (`task_id`),
     UNIQUE KEY `uk_detection_task_workflow_uuid` (`workflow_uuid`),
+    KEY `idx_detection_task_dispatch_id` (`dispatch_id`),
     KEY `idx_detection_task_status` (`status`),
     KEY `idx_detection_task_batch_no` (`batch_no`),
     KEY `idx_detection_task_work_order_no` (`work_order_no`),
@@ -246,6 +250,7 @@ CREATE TABLE IF NOT EXISTS `chat_pending_action` (
     `action_type` VARCHAR(64) NOT NULL COMMENT '动作类型',
     `action_payload_json` LONGTEXT NOT NULL COMMENT '动作载荷',
     `status` VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '动作状态',
+    `error_message` VARCHAR(500) DEFAULT NULL COMMENT '动作执行错误信息',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `confirmed_at` DATETIME DEFAULT NULL COMMENT '确认时间',
     PRIMARY KEY (`id`),

@@ -140,6 +140,10 @@ file:
       images: ${DETECTION_UPLOAD_DIR:${user.dir}/uploads/images}
 
 app:
+  database:
+    migration-scripts:
+      - classpath:db/migration-V13-business-seed-data-normalization.sql
+      - classpath:db/migration-V14-security-reliability-hardening.sql
   security:
     cookie-secure: ${APP_COOKIE_SECURE:false}
   redis:

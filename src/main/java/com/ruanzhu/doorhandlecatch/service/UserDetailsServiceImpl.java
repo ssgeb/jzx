@@ -22,11 +22,15 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         if (user == null) {
             throw new UsernameNotFoundException("用户不存在");
         }
-        
+
+        String authority = "ADMIN".equalsIgnoreCase(user.getRole())
+                ? "ROLE_ADMIN"
+                : "ROLE_OPERATOR";
+
         return new org.springframework.security.core.userdetails.User(
             user.getUsername(),
             user.getPassword(),
-            Collections.singletonList(new SimpleGrantedAuthority("ROLE_ADMIN"))
+            Collections.singletonList(new SimpleGrantedAuthority(authority))
         );
     }
-} 
+}
