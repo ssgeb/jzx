@@ -10,6 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -28,11 +32,22 @@ public class DetectionTaskEventPublisher {
                 event.getTaskId(),
                 toJsonForLog(event)
         );
-        kafkaTemplate.send(
-                kafkaTaskProperties.getTopics().getTaskCreated(),
-                event.getTaskId(),
-                event
-        );
+        try {
+            kafkaTemplate.send(
+                    kafkaTaskProperties.getTopics().getTaskCreated(),
+                    event.getTaskId(),
+                    event
+            ).get(kafkaTaskProperties.getSendTimeoutMs(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("Kafka 任务发送被中断: " + event.getTaskId());
+        } catch (ExecutionException | TimeoutException ex) {
+            log.error("Kafka task publish failed. taskId={}", event.getTaskId(), ex);
+            throw new BusinessException("Kafka 任务发送失败: " + event.getTaskId());
+        } catch (RuntimeException ex) {
+            log.error("Kafka task send failed before acknowledgement. taskId={}", event.getTaskId(), ex);
+            throw new BusinessException("Kafka 任务发送失败: " + event.getTaskId());
+        }
     }
 
     private String toJsonForLog(DetectionTaskCreatedEvent event) {

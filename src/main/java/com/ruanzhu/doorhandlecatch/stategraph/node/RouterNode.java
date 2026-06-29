@@ -133,7 +133,7 @@ public class RouterNode implements Node {
         AgentRouteDecision decision = new AgentRouteDecision();
         decision.setNormalizedUserPrompt(text);
 
-        boolean writeIntent = containsAny(text, "开始", "发起", "创建", "新建", "新增", "修改", "更新", "删除", "重试", "上传");
+        boolean writeIntent = hasWriteIntent(text);
 
         if (isBusinessMapQuestion(text)) {
             decision.setIntent("OPS_QUERY");
@@ -205,6 +205,17 @@ public class RouterNode implements Node {
             }
         }
         return false;
+    }
+
+    private boolean hasWriteIntent(String text) {
+        if (containsAny(text, "确认缺陷数", "确认缺陷率", "确认缺陷数量")) {
+            return false;
+        }
+        if (containsAny(text, "确认执行", "确认提交", "确认处置", "确认放行", "确认返工", "确认报废", "确认复检", "确认将")) {
+            return true;
+        }
+        return containsAny(text, "开始", "发起", "创建", "新建", "新增", "修改", "更新", "删除", "重试", "上传",
+                "标记", "置为", "设为", "改为", "提交", "处置", "放行", "报废");
     }
 
     /**

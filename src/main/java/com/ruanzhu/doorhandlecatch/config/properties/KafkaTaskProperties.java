@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration;
 public class KafkaTaskProperties {
     private boolean enabled = false;
     private String bootstrapServers = "localhost:9092";
+    private long sendTimeoutMs = 10000L;
     private String consumerGroup = "doorhandlecatch-detection";
     private Topics topics = new Topics();
 

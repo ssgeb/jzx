@@ -24,15 +24,22 @@ export const deleteSession = (sessionId) => request.delete(`/api/chat-assistant/
 
 export const sendChatMessage = (payload) => request.post('/api/chat-assistant/messages', payload)
 
+export const transcribeChatVoice = (audioBlob, filename = 'voice.webm') => {
+  const form = new FormData()
+  form.append('file', audioBlob, filename)
+  return request.post('/api/chat-assistant/voice/transcribe', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000
+  })
+}
+
 export const streamChatMessage = async (payload, handlers = {}) => {
   const baseURL = import.meta.env.VITE_API_URL || ''
-  const token = localStorage.getItem('token')
   const response = await fetch(`${baseURL}/api/chat-assistant/messages/stream`, {
     method: 'POST',
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify(payload)
   })

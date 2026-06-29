@@ -166,10 +166,7 @@ def test_other_pages(page, logged_in=False):
 
 def main():
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            executable_path=r"C:\Users\19771\AppData\Local\ms-playwright\chromium-1223\chrome-win64\chrome.exe"
-        )
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context(viewport={'width': 1920, 'height': 1080})
         page = context.new_page()
 

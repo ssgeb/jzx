@@ -22,6 +22,9 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -222,5 +225,72 @@ class ImageDetectionServiceImplTest {
         Map<String, Object> statistics = new ObjectMapper().readValue(persistedTask.getStatisticsJson(), Map.class);
         assertEquals(100.0, ((Number) statistics.get("missDetectionRate")).doubleValue());
         assertTrue(persistedTask.getResultOssPrefix().contains("annotated"));
+    }
+
+    @Test
+    void detectImageSupportsRelativeUploadDirectoryWithServletMultipartFile() {
+        ModelInfo modelInfo = new ModelInfo();
+        modelInfo.setModelId(7);
+        modelInfo.setVersion("v1");
+        modelInfo.setModelPath(tempDir.resolve("model.onnx").toString());
+        when(modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
+        when(imageInferenceService.classify(any(Path.class), eq(modelInfo.getModelPath())))
+                .thenReturn(new ImageInferenceService.ClassificationResult("Normal", 0.9f, Map.of("Normal", 0.9f)));
+
+        Path workingDirectory = Path.of("").toAbsolutePath().normalize();
+        String relativeUploadDir = workingDirectory.relativize(tempDir.resolve("images").toAbsolutePath()).toString();
+        String relativeAnnotatedDir = workingDirectory.relativize(tempDir.resolve("annotated").toAbsolutePath()).toString();
+        ReflectionTestUtils.setField(imageDetectionService, "uploadDir", relativeUploadDir);
+        ReflectionTestUtils.setField(imageDetectionService, "annotatedDir", relativeAnnotatedDir);
+
+        MockMultipartFile file = servletStyleMultipartFile("file", "sample.jpg", "demo-image".getBytes());
+
+        SingleImageDetectionResponse response = imageDetectionService.detectImage(file, 7);
+
+        assertEquals("Normal", response.getCategory());
+        assertEquals(null, response.getErrorMessage());
+        verify(imageInferenceService).classify(any(Path.class), eq(modelInfo.getModelPath()));
+    }
+
+    @Test
+    void processImageDetectionSupportsRelativeUploadDirectoryWithServletMultipartFile() {
+        ModelInfo modelInfo = new ModelInfo();
+        modelInfo.setModelId(7);
+        modelInfo.setModelPath(tempDir.resolve("model.onnx").toString());
+        when(modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
+        when(detectionTaskMapper.insert(any(DetectionTask.class))).thenAnswer(invocation -> {
+            DetectionTask task = invocation.getArgument(0);
+            ReflectionTestUtils.setField(task, "id", 101L);
+            return 1;
+        });
+
+        Path workingDirectory = Path.of("").toAbsolutePath().normalize();
+        ReflectionTestUtils.setField(imageDetectionService, "imageUploadDir",
+                workingDirectory.relativize(tempDir.resolve("images").toAbsolutePath()).toString());
+        ReflectionTestUtils.setField(imageDetectionService, "resultDir",
+                workingDirectory.relativize(tempDir.resolve("results").toAbsolutePath()).toString());
+        ReflectionTestUtils.setField(imageDetectionService, "annotatedDir",
+                workingDirectory.relativize(tempDir.resolve("annotated").toAbsolutePath()).toString());
+
+        MockMultipartFile file = servletStyleMultipartFile("files", "sample.jpg", "demo-image".getBytes());
+
+        ImageDetectionResponse response = imageDetectionService.processImageDetection(
+                List.of(file), 7, "COCO", 0.5f);
+
+        assertEquals("PROCESSING", response.getStatus());
+        assertEquals(101L, response.getId());
+    }
+
+    private MockMultipartFile servletStyleMultipartFile(String name, String filename, byte[] content) {
+        return new MockMultipartFile(name, filename, "image/jpeg", content) {
+            @Override
+            public void transferTo(File destination) throws IOException {
+                if (!destination.isAbsolute()) {
+                    throw new IOException(new NoSuchFileException(
+                            tempDir.resolve(destination.getPath()).toString()));
+                }
+                super.transferTo(destination);
+            }
+        };
     }
 }

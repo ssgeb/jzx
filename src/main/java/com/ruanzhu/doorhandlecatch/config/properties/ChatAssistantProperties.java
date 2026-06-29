@@ -18,6 +18,11 @@ public class ChatAssistantProperties {
     private Integer maxRequestsPerMinute = 30;
     private Integer maxScanDepth = 4;
     private Integer maxScanFiles = 200;
+    private String voiceTranscribeUrl = "";
+    private Integer voiceConnectTimeoutMs = 1500;
+    private Integer voiceReadTimeoutMs = 15000;
+    private Long voiceMaxBytes = 10 * 1024 * 1024L;
+    private List<String> voiceTranscribeAllowedHosts = new ArrayList<>(List.of("localhost", "127.0.0.1", "::1"));
     private Boolean ragEnabled = true;
     private Boolean ragQueryRewriteEnabled = true;
     private Boolean ragRerankEnabled = true;

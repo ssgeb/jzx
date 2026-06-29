@@ -190,6 +190,7 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
 
         // 6. 追加助手消息到 recentMessages（供下一轮上下文使用）
         String resultContent = stripEmoji(result.getString(AgentState.KEY_RESULT_CONTENT));
+        resultContent = appendKnowledgeSourceIfNeeded(resultContent, ragContext);
         if (StringUtils.hasText(resultContent)) {
             StateUpdater.appendMessage(result, "assistant", resultContent, maxRecentMessages);
             // 保存更新后的 state（包含本轮消息），但 invoke 后 checkpoint 已被 runLoop 保存，
@@ -255,6 +256,9 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         chatSessionService.verifySessionOwner(username, request.getSessionId());
         ChatPendingAction action = chatSessionService.getPendingAction(request.getSessionId(), request.getActionId());
         ChatPendingActionPayload payload = readPayload(action.getActionPayloadJson());
+        if (!"PENDING".equals(action.getStatus())) {
+            throw new BusinessException("待确认动作已处理，请勿重复提交");
+        }
 
         if (!request.isConfirmed()) {
             chatSessionService.markPendingActionStatus(request.getSessionId(), action.getActionId(), "CANCELLED");
@@ -396,5 +400,15 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         if (text == null) return null;
         // 移除 4 字节 UTF-8 字符（emoji 及部分 CJK 扩展字符）
         return text.replaceAll("[\\x{10000}-\\x{10FFFF}\\x{FE00}-\\x{FE0F}\\x{200D}\\x{20E3}\\x{E0020}-\\x{E007F}]", "");
+    }
+
+    private String appendKnowledgeSourceIfNeeded(String content, String ragContext) {
+        if (!StringUtils.hasText(content) || !StringUtils.hasText(ragContext)) {
+            return content;
+        }
+        if (content.contains("来源：") || content.contains("来源:")) {
+            return content;
+        }
+        return content.stripTrailing() + "\n\n来源：系统知识库/用户手册";
     }
 }

@@ -58,9 +58,14 @@
     <section class="manual-layout">
       <aside class="manual-toc app-panel">
         <h2>手册目录</h2>
-        <a v-for="section in sections" :key="section.id" :href="`#${section.id}`">
+        <button
+          v-for="section in sections"
+          :key="section.id"
+          type="button"
+          @click="scrollToManualSection(section.id)"
+        >
           {{ section.title }}
-        </a>
+        </button>
       </aside>
 
       <div class="manual-content">
@@ -169,6 +174,7 @@
               :name="item.question"
             >
               <p>{{ item.answer }}</p>
+              <pre v-if="item.command" class="manual-command">{{ item.command }}</pre>
             </el-collapse-item>
           </el-collapse>
         </section>
@@ -178,6 +184,12 @@
 </template>
 
 <script setup>
+function scrollToManualSection(sectionId) {
+  const target = document.getElementById(sectionId)
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 const sections = [
   { id: 'overview', title: '系统概览' },
   { id: 'inspection', title: '检测业务' },
@@ -265,6 +277,11 @@ const assistantQuestions = [
 
 const faqs = [
   { question: '登录后看不到数据怎么办？', answer: '先清空筛选条件并刷新页面；如果仍无数据，检查后端服务、数据库连接和当前账号权限。' },
+  {
+    question: '首次验收没有工单、批次、质检数据怎么办？',
+    answer: '这是空库的正常现象。可在启动后端前开启业务预置数据导入，系统会自动写入模型、设备、质检队列、缺陷证据、工单追溯和批次追溯数据。真实生产库请保持该开关关闭。',
+    command: 'PowerShell:\n.\\scripts\\start-backend-with-business-seed.ps1\n\n或手动设置：\n$env:APP_BUSINESS_SEED_ENABLED="true"\n.\\mvnw.cmd spring-boot:run'
+  },
   { question: '检测任务一直未完成怎么办？', answer: '通常需要检查推理服务、远程检测服务、OSS 图片路径和模型状态是否正常。' },
   { question: '质检队列没有任务怎么办？', answer: '可能当前没有需要复核的任务，也可能筛选状态不匹配，建议切换到全部可处理后刷新。' },
   { question: '工单或批次追溯查不到结果怎么办？', answer: '确认工单号或批次号是否准确，且相关检测任务已经完成并绑定了追溯字段。' },
@@ -363,7 +380,7 @@ const faqs = [
 
 .quick-start-card a,
 .module-card a,
-.manual-toc a,
+.manual-toc button,
 .role-route-links a {
   color: var(--app-primary);
   font-weight: 800;
@@ -439,14 +456,19 @@ const faqs = [
   font-size: 18px;
 }
 
-.manual-toc a {
+.manual-toc button {
   padding: 10px 12px;
+  border: 0;
   border-radius: 12px;
   color: var(--app-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
   transition: all 0.2s;
 }
 
-.manual-toc a:hover {
+.manual-toc button:hover {
   color: var(--app-primary);
   background: rgba(37, 99, 235, 0.08);
 }
@@ -562,6 +584,18 @@ const faqs = [
   border-radius: 14px;
   border: 1px solid rgba(245, 158, 11, 0.18);
   background: rgba(245, 158, 11, 0.08);
+}
+
+.manual-command {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #d1fae5;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 1100px) {

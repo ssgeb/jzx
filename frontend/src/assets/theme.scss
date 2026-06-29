@@ -157,9 +157,12 @@ select {
   z-index: 3000;
   transform: translateY(-160%);
   padding: 10px 14px;
+  border: 0;
   border-radius: var(--app-radius-sm);
   background: var(--app-primary);
   color: #fff;
+  cursor: pointer;
+  font: inherit;
   font-weight: 700;
   box-shadow: var(--app-shadow-lg);
   transition: transform var(--app-transition-fast);

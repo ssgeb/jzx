@@ -24,6 +24,21 @@
         @keydown.enter.exact.prevent="handleSend"
       />
       <button
+        class="composer-voice"
+        :class="{ recording, transcribing: voiceTranscribing }"
+        :disabled="loading || voiceTranscribing"
+        aria-label="语音输入"
+        :title="recording ? '停止录音并识别' : '语音输入'"
+        @click="toggleVoiceRecording"
+      >
+        <svg v-if="!voiceTranscribing" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <path d="M12 19v3"/>
+        </svg>
+        <span v-else class="voice-spinner"></span>
+      </button>
+      <button
         class="composer-send"
         :class="{ active: draft.trim() && !loading }"
         :disabled="loading || !draft.trim()"
@@ -35,12 +50,14 @@
         </svg>
       </button>
     </div>
-    <p class="composer-hint">Enter 发送 · Shift + Enter 换行</p>
+    <p class="composer-hint">{{ voiceHint || 'Enter 发送 · Shift + Enter 换行' }}</p>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onBeforeUnmount } from 'vue'
+import { ElMessage } from 'element-plus'
+import { transcribeChatVoice } from '@/api/chatAssistant'
 
 const props = defineProps({
   loading: { type: Boolean, default: false }
@@ -48,6 +65,23 @@ const props = defineProps({
 
 const emit = defineEmits(['send'])
 const draft = ref('')
+const recording = ref(false)
+const voiceTranscribing = ref(false)
+const voiceHint = ref('')
+const recordingSeconds = ref(0)
+let mediaRecorder = null
+let mediaStream = null
+let audioChunks = []
+let selectedVoiceMimeType = 'audio/webm'
+let recordingTimer = null
+const MAX_RECORDING_SECONDS = 60
+
+const voiceMimeOptions = [
+  { mimeType: 'audio/webm;codecs=opus', extension: 'webm' },
+  { mimeType: 'audio/webm', extension: 'webm' },
+  { mimeType: 'audio/mp4', extension: 'mp4' },
+  { mimeType: 'audio/ogg;codecs=opus', extension: 'ogg' }
+]
 
 const quickChips = [
   { label: '业务地图', text: '显示系统业务地图和功能入口', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>' },
@@ -80,6 +114,135 @@ const handleSend = () => {
     if (el) el.style.height = 'auto'
   })
 }
+
+const toggleVoiceRecording = async () => {
+  if (recording.value) {
+    stopVoiceRecording()
+    return
+  }
+  await startVoiceRecording()
+}
+
+const startVoiceRecording = async () => {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    ElMessage.warning('当前浏览器不支持语音输入')
+    return
+  }
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioChunks = []
+    const mimeOption = chooseSupportedMimeType()
+    selectedVoiceMimeType = mimeOption.mimeType || 'audio/webm'
+    mediaRecorder = mimeOption.mimeType
+      ? new MediaRecorder(mediaStream, { mimeType: mimeOption.mimeType })
+      : new MediaRecorder(mediaStream)
+    mediaRecorder.ondataavailable = event => {
+      if (event.data && event.data.size > 0) {
+        audioChunks.push(event.data)
+      }
+    }
+    mediaRecorder.onstop = handleVoiceRecorded
+    mediaRecorder.start()
+    recording.value = true
+    recordingSeconds.value = 0
+    voiceHint.value = `正在录音 0/${MAX_RECORDING_SECONDS} 秒，点击麦克风结束并识别`
+    startRecordingTimer()
+  } catch (error) {
+    console.error('[chat] 麦克风打开失败:', error)
+    ElMessage.error('无法访问麦克风，请检查浏览器权限')
+  }
+}
+
+const startRecordingTimer = () => {
+  clearRecordingTimer()
+  recordingTimer = window.setInterval(() => {
+    recordingSeconds.value += 1
+    voiceHint.value = `正在录音 ${recordingSeconds.value}/${MAX_RECORDING_SECONDS} 秒，点击麦克风结束并识别`
+    if (recordingSeconds.value >= MAX_RECORDING_SECONDS) {
+      ElMessage.info('已达到最长录音时长，正在自动识别')
+      stopVoiceRecording()
+    }
+  }, 1000)
+}
+
+const clearRecordingTimer = () => {
+  if (recordingTimer) {
+    window.clearInterval(recordingTimer)
+    recordingTimer = null
+  }
+}
+
+const chooseSupportedMimeType = () => {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return { mimeType: '', extension: 'webm' }
+  }
+  return voiceMimeOptions.find(option => MediaRecorder.isTypeSupported(option.mimeType)) || { mimeType: '', extension: 'webm' }
+}
+
+const voiceFileExtension = () => {
+  const match = voiceMimeOptions.find(option => option.mimeType === selectedVoiceMimeType)
+  return match?.extension || 'webm'
+}
+
+const stopVoiceRecording = () => {
+  clearRecordingTimer()
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  recording.value = false
+  stopMediaTracks()
+}
+
+const stopMediaTracks = () => {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop())
+    mediaStream = null
+  }
+}
+
+const handleVoiceRecorded = async () => {
+  if (!audioChunks.length) {
+    voiceHint.value = ''
+    return
+  }
+  voiceTranscribing.value = true
+  voiceHint.value = '正在识别语音...'
+  try {
+    const audioBlob = new Blob(audioChunks, { type: selectedVoiceMimeType })
+    const response = await transcribeChatVoice(audioBlob, `voice.${voiceFileExtension()}`)
+    const text = response.data?.data?.text || ''
+    if (!text.trim()) {
+      ElMessage.warning('没有识别到有效语音内容')
+      voiceHint.value = '未识别到语音，请靠近麦克风后重试'
+      return
+    }
+    draft.value = text
+    voiceHint.value = '已识别到输入框，请确认后发送'
+    autoResize()
+  } catch (error) {
+    console.error('[chat] 语音识别失败:', error)
+    ElMessage.error(error.response?.data?.message || error.message || '语音识别失败')
+    voiceHint.value = '语音识别失败，请重试'
+  } finally {
+    voiceTranscribing.value = false
+    audioChunks = []
+  }
+}
+
+onBeforeUnmount(() => {
+  clearRecordingTimer()
+  if (mediaRecorder) {
+    mediaRecorder.ondataavailable = null
+    mediaRecorder.onstop = null
+    if (mediaRecorder.state !== 'inactive') mediaRecorder.stop()
+  }
+  mediaRecorder = null
+  recording.value = false
+  voiceTranscribing.value = false
+  audioChunks = []
+  voiceHint.value = ''
+  stopMediaTracks()
+})
 </script>
 
 <style scoped>
@@ -181,6 +344,50 @@ const handleSend = () => {
   justify-content: center;
   flex-shrink: 0;
   transition: all 0.2s;
+}
+
+.composer-voice {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: #eef2ff;
+  color: #4f6ef7;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.composer-voice:hover:not(:disabled) {
+  background: #e0e7ff;
+  transform: scale(1.05);
+}
+
+.composer-voice.recording {
+  background: #fee2e2;
+  color: #dc2626;
+  box-shadow: 0 0 0 6px rgba(220, 38, 38, 0.08);
+}
+
+.composer-voice:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.voice-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(79, 110, 247, 0.25);
+  border-top-color: #4f6ef7;
+  border-radius: 999px;
+  animation: voice-spin 0.8s linear infinite;
+}
+
+@keyframes voice-spin {
+  to { transform: rotate(360deg); }
 }
 
 .composer-send.active {

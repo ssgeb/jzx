@@ -45,6 +45,27 @@ class RagKnowledgeServiceTest {
     }
 
     @Test
+    void retrieveContextCanExplainBusinessSeedDataImport() {
+        ChatAssistantProperties properties = new ChatAssistantProperties();
+        properties.setChromaEnabled(false);
+        properties.setRagSources(List.of("classpath:rag/system-user-guide.md"));
+        properties.setRagTopK(2);
+        properties.setRagMaxContextChars(1600);
+
+        DeepSeekClient deepSeekClient = mock(DeepSeekClient.class);
+        when(deepSeekClient.rewriteRagQuery(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(deepSeekClient.rerankRagCandidates(any(), any(), anyInt())).thenReturn(List.of(0, 1));
+        RagKnowledgeService service = new RagKnowledgeService(properties, new DefaultResourceLoader(), mock(ChromaRagStoreService.class), deepSeekClient);
+        service.loadKnowledgeBase();
+
+        String context = service.retrieveContext("首次验收没有工单批次质检数据怎么办");
+
+        assertThat(context).contains("业务预置数据");
+        assertThat(context).contains("APP_BUSINESS_SEED_ENABLED");
+        assertThat(context).contains("mvnw.cmd spring-boot:run");
+    }
+
+    @Test
     void retrieveContextReturnsEmptyWhenDisabled() {
         ChatAssistantProperties properties = new ChatAssistantProperties();
         properties.setRagEnabled(false);

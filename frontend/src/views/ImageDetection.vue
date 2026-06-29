@@ -15,14 +15,14 @@
       </div>
       <div class="hero-side-note">
         <strong>操作建议</strong>
-        <span>单图检测走本地直传接口；批量检测先上传到 OSS，再触发远程检测任务。</span>
+        <span>单图与批量检测均通过 OSS 上传，并由 Kafka 调度远程模型推理。</span>
       </div>
     </section>
 
     <el-tabs v-model="activeTab" class="workspace-tabs" @tab-change="handleTabChange">
       <el-tab-pane name="workspace" label="检测工作台">
         <div class="workspace-grid">
-          <el-card class="detection-card" header="检测输入" shadow="never">
+          <el-card class="detection-card detection-input-card" header="检测输入" shadow="never">
             <el-form label-position="top">
               <el-form-item label="选择模型（可选）">
                 <el-select
@@ -49,29 +49,96 @@
               <div class="input-grid">
                 <div class="input-block">
                   <div class="input-block-title">单图检测</div>
-                  <el-upload
-                    v-model:file-list="fileList"
-                    :before-upload="beforeUpload"
-                    :remove="handleRemove"
-                    accept=".jpg,.jpeg,.png"
-                    list-type="picture"
-                    :max-count="1"
-                  >
-                    <el-button type="primary" class="wide-button">
-                      <el-icon><Upload /></el-icon>
-                      选择单张图片
-                    </el-button>
-                  </el-upload>
-                  <el-button
-                    type="default"
-                    class="wide-button secondary-action"
-                    :disabled="!form.imageFile"
-                    :loading="loadingSingle"
-                    @click="handleSingleDetection"
-                  >
-                    <el-icon><VideoPlay /></el-icon>
-                    开始单图检测
-                  </el-button>
+                  <div class="single-detection-workspace">
+                    <div class="single-detection-controls">
+                      <el-upload
+                        v-model:file-list="fileList"
+                        class="single-image-uploader"
+                        :auto-upload="false"
+                        :on-change="handleUploadChange"
+                        :on-remove="handleRemove"
+                        accept=".jpg,.jpeg,.png"
+                        list-type="picture"
+                        :limit="1"
+                      >
+                        <el-button type="primary" class="wide-button">
+                          <el-icon><Upload /></el-icon>
+                          选择单张图片
+                        </el-button>
+                      </el-upload>
+                      <div
+                        v-if="form.imageFile"
+                        class="single-upload-file-name"
+                        :title="form.imageFile.name"
+                      >
+                        <span>已选择文件</span>
+                        <strong>{{ form.imageFile.name }}</strong>
+                      </div>
+                      <el-button
+                        type="default"
+                        class="wide-button secondary-action"
+                        :disabled="!form.imageFile"
+                        :loading="loadingSingle"
+                        @click="handleSingleDetection"
+                      >
+                        <el-icon><VideoPlay /></el-icon>
+                        开始单图检测
+                      </el-button>
+                    </div>
+
+                    <section class="single-detection-result" v-loading="loadingSingle" aria-live="polite">
+                      <div class="single-result-heading">
+                        <div>
+                          <span>Detection Result</span>
+                          <strong>检测结果</strong>
+                        </div>
+                        <div class="single-result-tags">
+                          <el-tag type="primary" effect="plain">Kafka 远程</el-tag>
+                          <el-tag v-if="detectionResult" type="success" effect="light">检测完成</el-tag>
+                          <el-tag v-else-if="form.imageFile" type="info" effect="plain">等待检测</el-tag>
+                        </div>
+                      </div>
+
+                      <div v-if="singleDetectionTaskId || singleDetectionMessage" class="single-result-runtime">
+                        <code v-if="singleDetectionTaskId" class="single-result-task-id">
+                          {{ singleDetectionTaskId }}
+                        </code>
+                        <span v-if="singleDetectionMessage">{{ singleDetectionMessage }}</span>
+                      </div>
+                      <el-alert
+                        v-if="singleDetectionStage === 'FAILED'"
+                        type="error"
+                        :closable="false"
+                        show-icon
+                        :title="singleDetectionMessage"
+                        class="single-result-error"
+                      />
+
+                      <template v-if="detectionResult">
+                        <div class="single-result-image">
+                          <img v-if="annotatedImageUrl" :src="annotatedImageUrl" alt="单图检测标注结果" />
+                          <el-empty v-else description="暂无标注图" :image-size="72" />
+                        </div>
+                        <el-descriptions bordered :column="1" size="small" class="single-result-meta">
+                          <el-descriptions-item label="检测类别">
+                            <el-tag :type="getCategoryType(detectionResult.category)">
+                              {{ getCategoryText(detectionResult.category) }}
+                            </el-tag>
+                          </el-descriptions-item>
+                          <el-descriptions-item label="置信度">
+                            {{ formatConfidence(detectionResult.confidence) }}
+                          </el-descriptions-item>
+                        </el-descriptions>
+                      </template>
+                      <template v-else-if="fileList[0]?.url">
+                        <div class="single-result-image single-result-preview">
+                          <img :src="fileList[0].url" alt="待检测图片预览" />
+                        </div>
+                        <p class="single-result-hint">图片已就绪，点击“开始单图检测”查看标注结果</p>
+                      </template>
+                      <el-empty v-else description="请先选择图片并开始检测" :image-size="88" />
+                    </section>
+                  </div>
                 </div>
               </div>
             </el-form>
@@ -123,6 +190,10 @@
               :image-size="64"
             >
               <template #default>
+                <BusinessSeedEmptyHint
+                  :title="taskList.length ? '没有匹配的任务' : '暂无检测任务'"
+                  description="可上传图片生成检测任务；首次验收完整业务闭环时，也可启用业务预置数据。"
+                />
                 <router-link v-if="!taskList.length" to="/upload">
                   <el-button type="primary" size="small">前往上传图片</el-button>
                 </router-link>
@@ -252,7 +323,7 @@
                     质检处置
                   </el-button>
                   <el-button
-                    v-if="task.flowStatus === 'REWORK_REQUIRED'"
+                    v-if="canSubmitReworkResult(task)"
                     type="primary"
                     size="small"
                     @click.stop="openReworkDialog(task)"
@@ -363,27 +434,6 @@
           </el-card>
         </div>
 
-        <!-- 单图检测结果 -->
-        <el-card v-if="detectionResult && !detectionResult.taskId" class="detection-card result-card" header="检测结果" shadow="never">
-          <div class="single-result-layout">
-            <div class="single-result-image">
-              <img v-if="annotatedImageUrl" :src="annotatedImageUrl" alt="标注图像" />
-              <el-empty v-else description="暂无标注图" />
-            </div>
-            <div class="single-result-meta">
-              <el-descriptions bordered :column="1">
-                <el-descriptions-item label="检测类别">
-                  <el-tag :type="getCategoryType(detectionResult.category)">
-                    {{ getCategoryText(detectionResult.category) }}
-                  </el-tag>
-                </el-descriptions-item>
-                <el-descriptions-item label="置信度">
-                  {{ formatConfidence(detectionResult.confidence) }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </div>
-          </div>
-        </el-card>
       </el-tab-pane>
 
       <el-tab-pane name="history" label="检测记录">
@@ -422,6 +472,10 @@
             :image-size="64"
           >
             <template #default>
+              <BusinessSeedEmptyHint
+                title="暂无检测记录"
+                description="可上传图片生成检测任务；首次验收完整业务闭环时，也可启用业务预置数据。"
+              />
               <router-link to="/upload">
                 <el-button type="primary" size="small">前往上传图片</el-button>
               </router-link>
@@ -566,9 +620,14 @@
             :data="qualityQueueRecords"
             size="small"
             border
-            empty-text="当前队列暂无待处理任务"
             class="quality-queue-table"
           >
+            <template #empty>
+              <BusinessSeedEmptyHint
+                title="当前队列暂无待处理任务"
+                description="如果是首次验收质检闭环，可开启业务预置数据后重启后端，再刷新队列。"
+              />
+            </template>
             <el-table-column prop="taskId" label="任务编号" min-width="185" show-overflow-tooltip />
             <el-table-column prop="workOrderNo" label="工单" min-width="130" show-overflow-tooltip />
             <el-table-column prop="batchNo" label="批次" min-width="150" show-overflow-tooltip />
@@ -605,7 +664,7 @@
                 <el-button link size="small" type="success" @click="downloadTaskQualityReport(row.taskId)">报告</el-button>
                 <el-button link size="small" type="info" @click="openAssignmentDialog(row)">分派</el-button>
                 <el-button
-                  v-if="row.reviewStatus === 'PENDING'"
+                  v-if="canReviewTask(row)"
                   link
                   size="small"
                   type="success"
@@ -623,7 +682,7 @@
                   处置
                 </el-button>
                 <el-button
-                  v-if="row.flowStatus === 'REWORK_REQUIRED'"
+                  v-if="canSubmitReworkResult(row)"
                   link
                   size="small"
                   type="primary"
@@ -683,7 +742,12 @@
             v-if="!defectGalleryRecords.length && !defectGalleryLoading"
             description="暂无匹配的缺陷证据"
             :image-size="88"
-          />
+          >
+            <BusinessSeedEmptyHint
+              title="暂无匹配的缺陷证据"
+              description="缺陷证据依赖检测任务、质检复核和证据 JSON。首次验收可先导入业务预置数据。"
+            />
+          </el-empty>
 
           <div v-else v-loading="defectGalleryLoading" class="defect-gallery-grid">
             <article v-for="task in defectGalleryRecords" :key="task.taskId" class="defect-evidence-card">
@@ -717,7 +781,7 @@
                   <el-button size="small" type="primary" plain @click="openTraceDialog(task.taskId)">追溯详情</el-button>
                   <el-button size="small" type="success" plain @click="downloadTaskQualityReport(task.taskId)">导出报告</el-button>
                   <el-button
-                    v-if="task.reviewStatus === 'PENDING'"
+                    v-if="canReviewTask(task)"
                     size="small"
                     type="warning"
                     plain
@@ -780,13 +844,13 @@
             </el-button>
           </div>
           <div class="trace-sample-row">
-            <span>示例工单：</span>
+            <span>常用工单：</span>
             <el-button
-              v-for="order in demoWorkOrderNos"
+              v-for="order in businessWorkOrderNos"
               :key="order"
               size="small"
               plain
-              @click="useDemoWorkOrder(order)"
+              @click="loadBusinessWorkOrderTrace(order)"
             >
               {{ order }}
             </el-button>
@@ -794,9 +858,14 @@
 
           <el-empty
             v-if="!workOrderTraceReport && !workOrderTraceLoading"
-            description="输入工单号，或点击上方示例工单，可查看该工单覆盖的批次、设备、缺陷和质检闭环"
+            description="输入工单号，或点击上方常用工单，可查看该工单覆盖的批次、设备、缺陷和质检闭环"
             :image-size="88"
-          />
+          >
+            <BusinessSeedEmptyHint
+              title="暂无工单追溯结果"
+              description="可点击常用工单查询；如果仍无结果，请先导入业务预置数据。"
+            />
+          </el-empty>
 
           <div v-else v-loading="workOrderTraceLoading" class="batch-trace-body">
             <template v-if="workOrderTraceReport">
@@ -959,13 +1028,13 @@
             </el-button>
           </div>
           <div class="trace-sample-row">
-            <span>示例批次：</span>
+            <span>常用批次：</span>
             <el-button
-              v-for="batch in demoBatchNos"
+              v-for="batch in businessBatchNos"
               :key="batch"
               size="small"
               plain
-              @click="useDemoBatch(batch)"
+              @click="loadBusinessBatchTrace(batch)"
             >
               {{ batch }}
             </el-button>
@@ -973,9 +1042,14 @@
 
           <el-empty
             v-if="!batchTraceReport && !batchTraceLoading"
-            description="输入批次号，或点击上方示例批次，可查看同批次任务、缺陷、质检和模型设备分布"
+            description="输入批次号，或点击上方常用批次，可查看同批次任务、缺陷、质检和模型设备分布"
             :image-size="88"
-          />
+          >
+            <BusinessSeedEmptyHint
+              title="暂无批次追溯结果"
+              description="可点击常用批次查询；如果仍无结果，请先导入业务预置数据。"
+            />
+          </el-empty>
 
           <div v-else v-loading="batchTraceLoading" class="batch-trace-body">
             <template v-if="batchTraceReport">
@@ -1388,19 +1462,44 @@ import { ElMessage } from 'element-plus'
 import { ArrowDown, CircleCheck, Clock, Delete, Download, Refresh, Search, Upload, VideoPlay, Warning } from '@element-plus/icons-vue'
 import {
   assignDetectionQualityTask,
-  detectSingleImage,
   disposeDetectionTask,
   fetchAvailableModels,
-  fetchBatchTraceReport,
-  fetchDefectGallery,
   fetchDetectionTaskTrace,
-  fetchQualityQueue,
-  fetchQualityReport,
-  fetchWorkOrderTraceReport,
   reviewDetectionTask,
   submitDetectionReworkResult
 } from '../api/detection'
+import { detectSingleImageViaKafka } from '../services/singleImageKafkaDetection'
 import { useTaskStore, useUploadStore, usePollingStore, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_ALIASES } from '../stores/detectionTask'
+import { useSingleImageUploadPreview } from '../composables/useSingleImageUploadPreview'
+import {
+  canAssignQualityTask,
+  canDisposeTask,
+  canReleaseDisposition,
+  canReviewTask,
+  canSubmitReworkResult,
+  dispositionActionText,
+  dispositionStatusText,
+  flowStatusText,
+  reviewConclusionText,
+  reviewStatusTagType,
+  reviewStatusText,
+  severityTagType,
+  severityText,
+  shouldDefaultRecheck
+} from '../utils/qualityWorkflow'
+import {
+  buildTraceEvidenceRows,
+  formatEvidenceConfidence,
+  formatPercentValue,
+  normalizeQualityQueueRecord,
+  resolveDefectPreview
+} from '../utils/qualityRecords'
+import { useQualityQueue } from '../composables/useQualityQueue'
+import { useDefectGallery } from '../composables/useDefectGallery'
+import { useTraceReports } from '../composables/useTraceReports'
+import { useDetectionHistory } from '../composables/useDetectionHistory'
+import { useQualityReportDownloads } from '../composables/useQualityReportDownloads'
+import BusinessSeedEmptyHint from '../components/BusinessSeedEmptyHint.vue'
 
 const taskStore = useTaskStore()
 const uploadStore = useUploadStore()
@@ -1412,6 +1511,72 @@ const {
   buildTaskStatistics, saveTaskList
 } = taskStore
 const { startTaskDetection, stopAllPolling, restoreFromSession, fetchTaskList, fetchTaskResults } = pollingStore
+const {
+  activeQualityQueue,
+  qualityQueueLoading,
+  qualityQueueRecords,
+  qualityQueueTotal,
+  qualityQueuePage,
+  qualityQueuePageSize,
+  qualityQueues,
+  loadQualityQueue,
+  switchQualityQueue,
+  onQualityQueueSizeChange
+} = useQualityQueue()
+const {
+  defectGalleryLoading,
+  defectGalleryRecords,
+  defectGalleryTotal,
+  defectGalleryPage,
+  defectGalleryPageSize,
+  defectFilters,
+  loadDefectGallery,
+  searchDefectGallery,
+  resetDefectGalleryFilters,
+  onDefectGallerySizeChange
+} = useDefectGallery()
+const {
+  workOrderTraceNo,
+  workOrderTraceLoading,
+  workOrderTraceReport,
+  batchTraceNo,
+  batchTraceLoading,
+  batchTraceReport,
+  businessWorkOrderNos,
+  businessBatchNos,
+  ensureDefaultWorkOrderNo,
+  ensureDefaultBatchNo,
+  loadWorkOrderTraceReport,
+  loadBatchTraceReport,
+  loadBusinessWorkOrderTrace,
+  loadBusinessBatchTrace
+} = useTraceReports()
+const {
+  historySearchKeyword,
+  historyFilterCollector,
+  historyFilterDevice,
+  historyFilterRegion,
+  historyPage,
+  historyPageSize,
+  historyTotal,
+  historyRecords,
+  historyLoading,
+  fetchHistoryWithFilters,
+  onHistorySearch,
+  onHistoryPageChange,
+  onHistorySizeChange
+} = useDetectionHistory(taskStore, pollingStore)
+const {
+  reportDownloading,
+  downloadTaskQualityReport,
+  downloadBatchTraceReport,
+  downloadWorkOrderTraceReport
+} = useQualityReportDownloads({
+  batchTraceNo,
+  batchTraceReport,
+  workOrderTraceNo,
+  workOrderTraceReport
+})
 
 // ==================== 组件本地状态（UI 相关） ====================
 
@@ -1420,6 +1585,9 @@ const modelList = ref([])
 const detectionResult = ref(null)
 const annotatedImageUrl = ref('')
 const loadingSingle = ref(false)
+const singleDetectionTaskId = ref('')
+const singleDetectionStage = ref('IDLE')
+const singleDetectionMessage = ref('')
 const taskFilter = ref('all')
 const taskSearchKeyword = ref('')
 const taskFilterDate = ref('')
@@ -1438,7 +1606,6 @@ const reworkTask = ref(null)
 const traceDialogVisible = ref(false)
 const traceLoading = ref(false)
 const traceDetail = ref(null)
-const reportDownloading = ref(false)
 const route = useRoute()
 const router = useRouter()
 const activeTab = ref('workspace')
@@ -1451,35 +1618,6 @@ const tabRouteMap = {
   'work-order-trace': '/quality/work-order-trace',
   'batch-trace': '/quality/batch-trace'
 }
-const activeQualityQueue = ref('ALL_ACTIONABLE')
-const qualityQueueLoading = ref(false)
-const qualityQueueRecords = ref([])
-const qualityQueueTotal = ref(0)
-const qualityQueuePage = ref(1)
-const qualityQueuePageSize = ref(10)
-const defectGalleryLoading = ref(false)
-const defectGalleryRecords = ref([])
-const defectGalleryTotal = ref(0)
-const defectGalleryPage = ref(1)
-const defectGalleryPageSize = ref(8)
-const workOrderTraceNo = ref('')
-const workOrderTraceLoading = ref(false)
-const workOrderTraceReport = ref(null)
-const batchTraceNo = ref('')
-const batchTraceLoading = ref(false)
-const batchTraceReport = ref(null)
-
-const demoWorkOrderNos = [
-  'WO-DEMO-SH-A-001',
-  'WO-DEMO-TJ-B-001',
-  'WO-DEMO-CD-E-001'
-]
-const demoBatchNos = [
-  'BATCH-SH-A-20260615-001',
-  'BATCH-TJ-B-20260615-001',
-  'BATCH-CD-E-20260615-001'
-]
-
 const form = reactive({
   modelId: null,
   threshold: 0.5,
@@ -1513,24 +1651,6 @@ const reworkForm = reactive({
   recheckRequired: true,
   reworkRemark: ''
 })
-
-const defectFilters = reactive({
-  defectType: '',
-  severityLevel: '',
-  deviceName: '',
-  batchNo: '',
-  modelId: null
-})
-
-const qualityQueues = [
-  { label: '全部待处理', value: 'ALL_ACTIONABLE', hint: '复核/处置/异常' },
-  { label: '待复核', value: 'PENDING_REVIEW', hint: '检测完成待确认' },
-  { label: '待处置', value: 'PENDING_DISPOSITION', hint: '复核后需决策' },
-  { label: '待返工', value: 'REWORK_REQUIRED', hint: '产线返修' },
-  { label: '待复检', value: 'RECHECK_REQUIRED', hint: '二次确认' },
-  { label: '暂挂', value: 'HOLD', hint: '人工保留' },
-  { label: '失败', value: 'FAILED', hint: '异常处理' }
-]
 
 // 筛选任务列表
 const filteredTaskList = computed(() => {
@@ -1567,238 +1687,15 @@ const filteredTaskList = computed(() => {
   return list
 })
 
-// 已完成/部分失败的任务（检测记录用），按完成时间倒序
-const completedTasks = computed(() =>
-  taskList.value
-    .filter(t => t.stage === 'completed' || t.stage === 'failed' || (t.result && t.stage !== 'uploading'))
-    .sort((a, b) => {
-      const ta = a.finishedAt || a.createdAt || ''
-      const tb = b.finishedAt || b.createdAt || ''
-      return tb.localeCompare(ta)
-    })
-)
-
 const traceEvidenceRows = computed(() => {
-  const detail = traceDetail.value
-  if (!detail) return []
-  const originals = (detail.originalImages || []).map(item => ({ ...item, type: '原图' }))
-  const previews = (detail.previewImages || []).map(item => ({ ...item, type: '标注图' }))
-  return [...originals, ...previews]
+  return buildTraceEvidenceRows(traceDetail.value)
 })
-
-const formatPercentValue = (value) => {
-  const number = Number(value || 0)
-  return Math.round(number * 1000) / 10
-}
 
 const mapDistributionRows = (distribution) => {
   if (!distribution) return []
   return Object.entries(distribution)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
-}
-
-const safeFilePart = (value) => String(value || 'unknown')
-  .replace(/[\\/:*?"<>|\s]+/g, '-')
-  .replace(/-+/g, '-')
-  .replace(/^-|-$/g, '')
-
-const reportTimestamp = () => {
-  const now = new Date()
-  const pad = (value) => String(value).padStart(2, '0')
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-}
-
-const downloadJsonReport = (payload, fileName) => {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
-const downloadTaskQualityReport = async (taskId) => {
-  if (!taskId) {
-    ElMessage.warning('缺少任务编号，无法导出报告')
-    return
-  }
-  reportDownloading.value = true
-  try {
-    const response = await fetchQualityReport(taskId)
-    if (response.data?.code === 200) {
-      const report = response.data.data
-      downloadJsonReport(report, `quality-report-${safeFilePart(taskId)}-${reportTimestamp()}.json`)
-      ElMessage.success('质检报告已导出')
-    } else {
-      ElMessage.error(response.data?.message || '导出质检报告失败')
-    }
-  } catch (error) {
-    console.error('导出质检报告失败:', error)
-    ElMessage.error(error.response?.data?.message || '导出质检报告失败')
-  } finally {
-    reportDownloading.value = false
-  }
-}
-
-const downloadBatchTraceReport = () => {
-  if (!batchTraceReport.value) {
-    ElMessage.warning('请先生成批次追溯报告')
-    return
-  }
-  const batchNo = batchTraceReport.value.batchNo || batchTraceNo.value
-  downloadJsonReport({
-    ...batchTraceReport.value,
-    exportedAt: new Date().toISOString(),
-    exportedBy: 'DoorHandleCatch Web'
-  }, `batch-trace-${safeFilePart(batchNo)}-${reportTimestamp()}.json`)
-  ElMessage.success('批次追溯报告已导出')
-}
-
-const downloadWorkOrderTraceReport = () => {
-  if (!workOrderTraceReport.value) {
-    ElMessage.warning('请先生成工单追溯报告')
-    return
-  }
-  const workOrderNo = workOrderTraceReport.value.workOrderNo || workOrderTraceNo.value
-  downloadJsonReport({
-    ...workOrderTraceReport.value,
-    exportedAt: new Date().toISOString(),
-    exportedBy: 'DoorHandleCatch Web'
-  }, `work-order-trace-${safeFilePart(workOrderNo)}-${reportTimestamp()}.json`)
-  ElMessage.success('工单追溯报告已导出')
-}
-
-// 搜索
-const historySearchKeyword = ref('')
-const onHistorySearch = () => {
-  historyPage.value = 1
-  fetchHistoryWithFilters(1)
-}
-
-// 高级筛选
-const historyFilterCollector = ref('')
-const historyFilterDevice = ref('')
-const historyFilterRegion = ref('')
-
-// 服务端分页
-const historyPage = ref(1)
-const historyPageSize = ref(10)
-const historyTotal = ref(0)
-const historyRecords = ref([])
-const historyLoading = ref(false)
-
-const fetchHistoryWithFilters = async (page, size) => {
-  historyLoading.value = true
-  try {
-    const p = page || historyPage.value
-    const s = size || historyPageSize.value
-    const filters = {}
-    if (historySearchKeyword.value.trim()) filters.keyword = historySearchKeyword.value.trim()
-    if (historyFilterCollector.value.trim()) filters.collector = historyFilterCollector.value.trim()
-    if (historyFilterDevice.value.trim()) filters.deviceName = historyFilterDevice.value.trim()
-    if (historyFilterRegion.value.trim()) filters.region = historyFilterRegion.value.trim()
-    const result = await fetchTaskList(p, s, '', '', filters)
-    if (result) {
-      historyRecords.value = (result.records || []).map(bt => {
-        const localTask = taskStore.taskList.find(t => t.taskId === bt.taskId)
-        return localTask || {
-          ...bt,
-          imageCount: bt.totalImages || 0,
-          result: null,
-          captureInfo: {
-            captureDate: bt.captureDate || '',
-            region: bt.region || '',
-            collector: bt.collector || '',
-            deviceName: bt.deviceName || '',
-            imageFolderName: bt.imageFolderName || ''
-          }
-        }
-      })
-      historyTotal.value = result.total || 0
-
-      // 并行获取已完成任务的结果详情
-      const completedIds = historyRecords.value
-        .filter(t => t.stage === 'completed' || t.stage === 'failed')
-        .map(t => t.taskId)
-      if (completedIds.length) {
-        await fetchTaskResults(completedIds)
-        // 更新记录以反映新获取的结果
-        historyRecords.value = historyRecords.value.map(t => {
-          const updated = taskStore.taskList.find(u => u.taskId === t.taskId)
-          return updated || t
-        })
-      }
-    }
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-const onHistoryPageChange = (page, size) => {
-  historyPage.value = page
-  fetchHistoryWithFilters(page, size)
-}
-
-const onHistorySizeChange = (size) => {
-  historyPageSize.value = size
-  historyPage.value = 1
-  fetchHistoryWithFilters(1, size)
-}
-
-const normalizeQualityQueueRecord = (record) => ({
-  ...record,
-  stage: record.stage ? record.stage.toLowerCase() : (record.status === 'FAILED' ? 'failed' : 'completed'),
-  imageCount: record.totalImages || record.imageCount || 0,
-  result: record.result || null,
-  captureInfo: {
-    captureDate: record.captureDate || '',
-    region: record.region || '',
-    collector: record.collector || '',
-    deviceName: record.deviceName || '',
-    imageFolderName: record.imageFolderName || ''
-  }
-})
-
-const resolvePageNumber = (page, fallback) => {
-  const value = Number(page)
-  return Number.isInteger(value) && value > 0 ? value : fallback
-}
-
-const loadQualityQueue = async (page = qualityQueuePage.value) => {
-  const targetPage = resolvePageNumber(page, qualityQueuePage.value)
-  qualityQueueLoading.value = true
-  try {
-    const response = await fetchQualityQueue(activeQualityQueue.value, targetPage, qualityQueuePageSize.value)
-    if (response.data?.code === 200) {
-      const data = response.data.data || {}
-      qualityQueueRecords.value = (data.records || []).map(normalizeQualityQueueRecord)
-      qualityQueueTotal.value = Number(data.total || 0)
-      qualityQueuePage.value = targetPage
-    } else {
-      ElMessage.error(response.data?.message || '获取质检队列失败')
-    }
-  } catch (error) {
-    console.error('获取质检队列失败:', error)
-    ElMessage.error(error.response?.data?.message || '获取质检队列失败')
-  } finally {
-    qualityQueueLoading.value = false
-  }
-}
-
-const switchQualityQueue = (queue) => {
-  activeQualityQueue.value = queue
-  qualityQueuePage.value = 1
-  loadQualityQueue(1)
-}
-
-const onQualityQueueSizeChange = (size) => {
-  qualityQueuePageSize.value = size
-  qualityQueuePage.value = 1
-  loadQualityQueue(1)
 }
 
 const refreshQualityQueueIfVisible = async () => {
@@ -1821,11 +1718,11 @@ const handleTabChange = async (tabName) => {
     await loadDefectGallery(1)
   }
   if (tabName === 'work-order-trace' && !workOrderTraceReport.value && !workOrderTraceLoading.value) {
-    workOrderTraceNo.value = workOrderTraceNo.value || demoWorkOrderNos[0]
+    ensureDefaultWorkOrderNo()
     await loadWorkOrderTraceReport()
   }
   if (tabName === 'batch-trace' && !batchTraceReport.value && !batchTraceLoading.value) {
-    batchTraceNo.value = batchTraceNo.value || demoBatchNos[0]
+    ensureDefaultBatchNo()
     await loadBatchTraceReport()
   }
   const targetPath = tabRouteMap[tabName]
@@ -1850,76 +1747,6 @@ watch(
   }
 )
 
-const buildDefectGalleryParams = (page = defectGalleryPage.value) => {
-  const targetPage = resolvePageNumber(page, defectGalleryPage.value)
-  const params = {
-    page: targetPage,
-    size: defectGalleryPageSize.value
-  }
-  if (defectFilters.defectType.trim()) params.defectType = defectFilters.defectType.trim()
-  if (defectFilters.severityLevel) params.severityLevel = defectFilters.severityLevel
-  if (defectFilters.deviceName.trim()) params.deviceName = defectFilters.deviceName.trim()
-  if (defectFilters.batchNo.trim()) params.batchNo = defectFilters.batchNo.trim()
-  if (defectFilters.modelId) params.modelId = defectFilters.modelId
-  return params
-}
-
-const loadDefectGallery = async (page = defectGalleryPage.value) => {
-  const targetPage = resolvePageNumber(page, defectGalleryPage.value)
-  defectGalleryLoading.value = true
-  try {
-    const response = await fetchDefectGallery(buildDefectGalleryParams(targetPage))
-    if (response.data?.code === 200) {
-      const data = response.data.data || {}
-      defectGalleryRecords.value = data.records || []
-      defectGalleryTotal.value = Number(data.total || 0)
-      defectGalleryPage.value = targetPage
-    } else {
-      ElMessage.error(response.data?.message || '获取缺陷证据库失败')
-    }
-  } catch (error) {
-    console.error('获取缺陷证据库失败:', error)
-    ElMessage.error(error.response?.data?.message || '获取缺陷证据库失败')
-  } finally {
-    defectGalleryLoading.value = false
-  }
-}
-
-const searchDefectGallery = () => {
-  defectGalleryPage.value = 1
-  loadDefectGallery(1)
-}
-
-const resetDefectGalleryFilters = () => {
-  defectFilters.defectType = ''
-  defectFilters.severityLevel = ''
-  defectFilters.deviceName = ''
-  defectFilters.batchNo = ''
-  defectFilters.modelId = null
-  searchDefectGallery()
-}
-
-const onDefectGallerySizeChange = (size) => {
-  defectGalleryPageSize.value = size
-  defectGalleryPage.value = 1
-  loadDefectGallery(1)
-}
-
-const resolveDefectPreview = (task) => {
-  const preview = task.previewImages?.find(item => item.annotatedUrl || item.previewUrl)
-  if (preview) return preview.annotatedUrl || preview.previewUrl
-  const evidencePreviewKey = task.defectEvidence?.find(item => item.previewUrl || item.annotatedUrl)
-  if (evidencePreviewKey) return evidencePreviewKey.previewUrl || evidencePreviewKey.annotatedUrl
-  const original = task.originalImages?.find(item => item.previewUrl)
-  return original?.previewUrl || ''
-}
-
-const formatEvidenceConfidence = (value) => {
-  const number = Number(value)
-  if (Number.isNaN(number)) return '--'
-  return `${Math.round(number * 1000) / 10}%`
-}
-
 const getStatType = (key) => {
   const types = {
     'class-Normal': 'success',
@@ -1934,20 +1761,17 @@ const getStatType = (key) => {
 
 // ==================== 单图检测 ====================
 
-const beforeUpload = (file) => {
-  form.imageFile = file
-  fileList.value = [{ uid: `${Date.now()}`, name: file.name, status: 'done', originFileObj: file }]
-  detectionResult.value = null
-  annotatedImageUrl.value = ''
-  return false
-}
-
-const handleRemove = () => {
-  form.imageFile = null
-  fileList.value = []
-  detectionResult.value = null
-  annotatedImageUrl.value = ''
-}
+const { handleUploadChange, handleRemove } = useSingleImageUploadPreview({
+  form,
+  fileList,
+  detectionResult,
+  annotatedImageUrl,
+  onReset: () => {
+    singleDetectionTaskId.value = ''
+    singleDetectionStage.value = 'IDLE'
+    singleDetectionMessage.value = ''
+  }
+})
 
 const handleSingleDetection = async () => {
   if (!form.imageFile) {
@@ -1958,24 +1782,31 @@ const handleSingleDetection = async () => {
   loadingSingle.value = true
   detectionResult.value = null
   annotatedImageUrl.value = ''
+  singleDetectionStage.value = 'CREATING'
+  singleDetectionMessage.value = '正在创建单图 Kafka 任务'
 
   try {
-    const formData = new FormData()
-    formData.append('imageFile', form.imageFile, form.imageFile.name)
-    if (form.modelId) {
-      formData.append('modelId', String(form.modelId))
-    }
-
-    const response = await detectSingleImage(formData)
-    if (!response.data || response.data.code !== 200) {
-      throw new Error(response.data?.message || '单图检测失败')
-    }
-
-    detectionResult.value = response.data.data
-    annotatedImageUrl.value = response.data.data.annotatedImagePath || response.data.data.processedImagePath || ''
+    const result = await detectSingleImageViaKafka({
+      file: form.imageFile,
+      modelId: form.modelId,
+      threshold: form.threshold,
+      onStatus: ({ taskId, stage, message }) => {
+        singleDetectionTaskId.value = taskId || singleDetectionTaskId.value
+        singleDetectionStage.value = stage || singleDetectionStage.value
+        singleDetectionMessage.value = message || singleDetectionMessage.value
+      }
+    })
+    detectionResult.value = result
+    annotatedImageUrl.value = result.annotatedImagePath
+    singleDetectionTaskId.value = result.taskId
+    singleDetectionStage.value = 'COMPLETED'
+    singleDetectionMessage.value = 'Kafka 远程检测完成'
+    ElMessage.success('单图 Kafka 远程检测完成')
   } catch (error) {
-    console.error('单图检测失败:', error)
-    ElMessage.error(`单图检测失败: ${error.message || '未知错误'}`)
+    console.error('单图 Kafka 检测失败:', error)
+    singleDetectionStage.value = 'FAILED'
+    singleDetectionMessage.value = error.message || 'Kafka 远程检测失败'
+    ElMessage.error(singleDetectionMessage.value)
   } finally {
     loadingSingle.value = false
   }
@@ -1985,7 +1816,7 @@ const handleSingleDetection = async () => {
 
 const formatConfidence = (confidence) => {
   if (confidence === undefined || confidence === null) {
-    return '0.00%'
+    return '--'
   }
   return `${(Number(confidence) * 100).toFixed(2)}%`
 }
@@ -2036,108 +1867,6 @@ const refreshTaskList = async () => {
   } finally {
     refreshingTasks.value = false
   }
-}
-
-const flowStatusText = (status) => {
-  const map = {
-    UPLOADING: '上传中',
-    PENDING_DETECTION: '待检测',
-    DETECTING: '检测中',
-    PENDING_REVIEW: '待复核',
-    REVIEWING: '复核中',
-    CONFIRMED: '已确认',
-    ARCHIVED: '已归档',
-    FAILED: '失败'
-  }
-  return map[status] || status || '--'
-}
-
-const dispositionStatusText = (status) => {
-  const map = {
-    PENDING: '待处置',
-    DISPOSED: '已处置'
-  }
-  return map[status] || status || '--'
-}
-
-const dispositionActionText = (action) => {
-  const map = {
-    RELEASE: '正常放行',
-    REWORK: '返工处理',
-    RECHECK: '安排复检',
-    HOLD: '暂挂观察',
-    SCRAP: '报废隔离'
-  }
-  return map[action] || action || '--'
-}
-
-const reviewStatusText = (status) => {
-  const map = {
-    PENDING: '待复核',
-    REVIEWED: '已复核',
-    SKIPPED: '已跳过'
-  }
-  return map[status] || status || '--'
-}
-
-const reviewStatusTagType = (status) => {
-  const map = {
-    PENDING: 'warning',
-    REVIEWED: 'success',
-    SKIPPED: 'info'
-  }
-  return map[status] || 'info'
-}
-
-const reviewConclusionText = (conclusion) => {
-  const map = {
-    CONFIRMED_DEFECT: '确认缺陷',
-    FALSE_POSITIVE: '误报',
-    NORMAL_RELEASE: '正常放行',
-    NEEDS_RECHECK: '需二次复查'
-  }
-  return map[conclusion] || conclusion || '--'
-}
-
-const severityText = (severity) => {
-  const map = {
-    MINOR: '轻微',
-    MAJOR: '一般',
-    CRITICAL: '严重'
-  }
-  return map[severity] || severity || '--'
-}
-
-const severityTagType = (severity) => {
-  const map = {
-    MINOR: 'info',
-    MAJOR: 'warning',
-    CRITICAL: 'danger'
-  }
-  return map[severity] || 'info'
-}
-
-const canReleaseDisposition = (task) => {
-  const conclusion = task?.reviewConclusion || task?.result?.reviewConclusion
-  return ['NORMAL_RELEASE', 'FALSE_POSITIVE'].includes(conclusion)
-}
-
-const canAssignQualityTask = (task) => {
-  const status = task.status || task.result?.status
-  const stage = task.stage
-  const flowStatus = task.flowStatus || task.result?.flowStatus
-  return (stage === 'completed' || status === 'COMPLETED' || status === 'PARTIAL_FAILED') &&
-    !['RELEASED', 'SCRAPPED', 'ARCHIVED'].includes(flowStatus)
-}
-
-const canDisposeTask = (task) => {
-  const reviewStatus = task.reviewStatus || task.result?.reviewStatus
-  const dispositionStatus = task.dispositionStatus || task.result?.dispositionStatus
-  const flowStatus = task.flowStatus || task.result?.flowStatus
-  return (task.stage === 'completed' || task.status === 'COMPLETED' || task.status === 'PARTIAL_FAILED') &&
-    reviewStatus === 'REVIEWED' &&
-    dispositionStatus !== 'DISPOSED' &&
-    ['CONFIRMED', 'HOLD'].includes(flowStatus)
 }
 
 const applyTaskProgressUpdate = async (taskId, data, fallbackMessage) => {
@@ -2260,7 +1989,7 @@ const submitQualityAssignment = async () => {
 const openDispositionDialog = (task) => {
   dispositionTask.value = task
   dispositionForm.dispositionAction = canReleaseDisposition(task) ? 'RELEASE' : 'REWORK'
-  dispositionForm.recheckRequired = task.reviewConclusion === 'NEEDS_RECHECK'
+  dispositionForm.recheckRequired = shouldDefaultRecheck(task)
   dispositionForm.dispositionRemark = task.dispositionRemark || ''
   dispositionDialogVisible.value = true
 }
@@ -2358,64 +2087,6 @@ const openTraceDialog = async (taskId) => {
   } finally {
     traceLoading.value = false
   }
-}
-
-const loadWorkOrderTraceReport = async () => {
-  const workOrderNo = workOrderTraceNo.value.trim()
-  if (!workOrderNo) {
-    ElMessage.warning('请输入工单号')
-    return
-  }
-  workOrderTraceLoading.value = true
-  workOrderTraceReport.value = null
-  try {
-    const response = await fetchWorkOrderTraceReport(workOrderNo)
-    if (response.data?.code === 200) {
-      workOrderTraceReport.value = response.data.data
-      ElMessage.success('工单追溯报告已生成')
-    } else {
-      ElMessage.error(response.data?.message || '获取工单追溯失败')
-    }
-  } catch (error) {
-    console.error('获取工单追溯失败:', error)
-    ElMessage.error(error.response?.data?.message || '获取工单追溯失败')
-  } finally {
-    workOrderTraceLoading.value = false
-  }
-}
-
-const loadBatchTraceReport = async () => {
-  const batchNo = batchTraceNo.value.trim()
-  if (!batchNo) {
-    ElMessage.warning('请输入批次号')
-    return
-  }
-  batchTraceLoading.value = true
-  batchTraceReport.value = null
-  try {
-    const response = await fetchBatchTraceReport(batchNo)
-    if (response.data?.code === 200) {
-      batchTraceReport.value = response.data.data
-      ElMessage.success('批次追溯报告已生成')
-    } else {
-      ElMessage.error(response.data?.message || '获取批次追溯失败')
-    }
-  } catch (error) {
-    console.error('获取批次追溯失败:', error)
-    ElMessage.error(error.response?.data?.message || '获取批次追溯失败')
-  } finally {
-    batchTraceLoading.value = false
-  }
-}
-
-const useDemoWorkOrder = async (workOrderNo) => {
-  workOrderTraceNo.value = workOrderNo
-  await loadWorkOrderTraceReport()
-}
-
-const useDemoBatch = async (batchNo) => {
-  batchTraceNo.value = batchNo
-  await loadBatchTraceReport()
 }
 
 onMounted(async () => {
@@ -2534,7 +2205,7 @@ onBeforeUnmount(() => {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 13fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
@@ -2554,7 +2225,7 @@ onBeforeUnmount(() => {
 
 .input-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 
@@ -2578,6 +2249,7 @@ onBeforeUnmount(() => {
   height: 88px;
   border: 1px solid rgba(37, 99, 235, 0.08);
   border-radius: 999px;
+  pointer-events: none;
 }
 
 .input-block-title {
@@ -2593,6 +2265,141 @@ onBeforeUnmount(() => {
 
 .secondary-action {
   margin-top: 12px;
+}
+
+.single-detection-workspace {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.82fr) minmax(360px, 1.18fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.single-detection-controls {
+  min-width: 0;
+}
+
+.single-image-uploader {
+  width: 100%;
+}
+
+.single-image-uploader :deep(.el-upload),
+.single-image-uploader :deep(.el-upload-list) {
+  width: 100%;
+}
+
+.single-image-uploader :deep(.el-upload-list__item) {
+  min-height: 76px;
+  height: auto;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.single-image-uploader :deep(.el-upload-list__item-name) {
+  display: none;
+}
+
+.single-upload-file-name {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: 12px;
+  background: rgba(239, 246, 255, 0.72);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.single-upload-file-name span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.single-upload-file-name strong {
+  color: #1e293b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.single-detection-result {
+  min-width: 0;
+  min-height: 320px;
+  padding: 16px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.single-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.single-result-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.single-result-heading span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.single-result-heading strong {
+  color: #172033;
+  font-size: 16px;
+}
+
+.single-result-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.single-result-runtime {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: rgba(239, 246, 255, 0.76);
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.single-result-task-id {
+  color: #1d4ed8;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.single-result-error {
+  margin-bottom: 12px;
+}
+
+.single-result-hint {
+  margin: 12px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
 }
 
 .folder-summary {
@@ -2883,10 +2690,6 @@ onBeforeUnmount(() => {
   color: #475569;
 }
 
-.result-card {
-  margin-top: 24px;
-}
-
 .stats-block {
   margin-top: 16px;
 }
@@ -3108,12 +2911,27 @@ onBeforeUnmount(() => {
 }
 
 .single-result-image {
-  min-height: 280px;
+  min-height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   border-radius: 18px;
   background: #f8fafc;
+}
+
+.single-result-image img {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.single-result-preview img {
+  max-height: 250px;
+}
+
+.single-result-meta {
+  margin-top: 12px;
 }
 
 /* 检测记录筛选栏 */
@@ -3469,6 +3287,7 @@ onBeforeUnmount(() => {
 @media (max-width: 1080px) {
   .workspace-grid,
   .input-grid,
+  .single-detection-workspace,
   .single-result-layout,
   .preview-images,
   .defect-filter-bar,

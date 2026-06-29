@@ -1,4 +1,5 @@
 @echo off
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
-D:\ruanjian\anaconda3\envs\leetcode\python.exe %~dp0test_agent.py
+conda run --no-capture-output -n leetcode python "%~dp0test_agent.py"
+exit /b %ERRORLEVEL%

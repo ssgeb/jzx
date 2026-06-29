@@ -87,9 +87,9 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
 
         ModelInfo modelInfo = resolveModelInfo(modelId);
         String folderName = "detect_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        Path imageFolderPath = Paths.get(imageUploadDir, folderName);
-        Path resultFolderPath = Paths.get(resultDir, folderName);
-        Path annotatedFolderPath = Paths.get(annotatedDir, folderName);
+        Path imageFolderPath = Paths.get(imageUploadDir, folderName).toAbsolutePath().normalize();
+        Path resultFolderPath = Paths.get(resultDir, folderName).toAbsolutePath().normalize();
+        Path annotatedFolderPath = Paths.get(annotatedDir, folderName).toAbsolutePath().normalize();
 
         try {
             Files.createDirectories(imageFolderPath);
@@ -187,8 +187,8 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
         try {
             ModelInfo modelInfo = resolveModelInfo(modelId);
             String folderName = "detect_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            Path uploadPath = Paths.get(uploadDir, folderName);
-            Path annotatedPath = Paths.get(annotatedDir, folderName);
+            Path uploadPath = Paths.get(uploadDir, folderName).toAbsolutePath().normalize();
+            Path annotatedPath = Paths.get(annotatedDir, folderName).toAbsolutePath().normalize();
             Files.createDirectories(uploadPath);
             Files.createDirectories(annotatedPath);
 

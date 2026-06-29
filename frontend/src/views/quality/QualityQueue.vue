@@ -49,9 +49,14 @@
             :data="qualityQueueRecords"
             size="small"
             border
-            empty-text="当前队列暂无待处理任务"
             class="quality-queue-table"
           >
+            <template #empty>
+              <BusinessSeedEmptyHint
+                title="当前队列暂无待处理任务"
+                description="如果是首次验收质检闭环，可开启业务预置数据后重启后端，再刷新队列。"
+              />
+            </template>
             <el-table-column prop="taskId" label="任务编号" min-width="185" show-overflow-tooltip />
             <el-table-column prop="workOrderNo" label="工单" min-width="130" show-overflow-tooltip />
             <el-table-column prop="batchNo" label="批次" min-width="150" show-overflow-tooltip />
@@ -453,9 +458,7 @@ import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, CircleCheck, Clock, Delete, Download, Refresh, Search, Upload, VideoPlay, Warning } from '@element-plus/icons-vue'
 import {
-  assignDetectionQualityTask,
   detectSingleImage,
-  disposeDetectionTask,
   fetchAvailableModels,
   fetchBatchTraceReport,
   fetchDefectGallery,
@@ -463,10 +466,12 @@ import {
   fetchQualityQueue,
   fetchQualityReport,
   fetchWorkOrderTraceReport,
-  reviewDetectionTask,
-  submitDetectionReworkResult
 } from '../../api/detection'
 import { useTaskStore, useUploadStore, usePollingStore, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_ALIASES } from '../../stores/detectionTask'
+import { useSingleImageUploadPreview } from '../../composables/useSingleImageUploadPreview'
+import { useQualityTaskActions } from '../../composables/useQualityTaskActions'
+import { businessBatchNos, businessWorkOrderNos } from '../../config/businessTracePresets'
+import BusinessSeedEmptyHint from '../../components/BusinessSeedEmptyHint.vue'
 
 const taskStore = useTaskStore()
 const uploadStore = useUploadStore()
@@ -489,18 +494,6 @@ const loadingSingle = ref(false)
 const taskFilter = ref('all')
 const taskSearchKeyword = ref('')
 const taskFilterDate = ref('')
-const reviewDialogVisible = ref(false)
-const reviewSubmitting = ref(false)
-const reviewTask = ref(null)
-const assignmentDialogVisible = ref(false)
-const assignmentSubmitting = ref(false)
-const assignmentTask = ref(null)
-const dispositionDialogVisible = ref(false)
-const dispositionSubmitting = ref(false)
-const dispositionTask = ref(null)
-const reworkDialogVisible = ref(false)
-const reworkSubmitting = ref(false)
-const reworkTask = ref(null)
 const traceDialogVisible = ref(false)
 const traceLoading = ref(false)
 const traceDetail = ref(null)
@@ -535,49 +528,10 @@ const batchTraceNo = ref('')
 const batchTraceLoading = ref(false)
 const batchTraceReport = ref(null)
 
-const demoWorkOrderNos = [
-  'WO-DEMO-SH-A-001',
-  'WO-DEMO-TJ-B-001',
-  'WO-DEMO-CD-E-001'
-]
-const demoBatchNos = [
-  'BATCH-SH-A-20260615-001',
-  'BATCH-TJ-B-20260615-001',
-  'BATCH-CD-E-20260615-001'
-]
-
 const form = reactive({
   modelId: null,
   threshold: 0.5,
   imageFile: null
-})
-
-const reviewForm = reactive({
-  reviewConclusion: 'CONFIRMED_DEFECT',
-  severityLevel: 'MAJOR',
-  confirmedDefectCount: 0,
-  falsePositiveCount: 0,
-  reviewRemark: ''
-})
-
-const assignmentForm = reactive({
-  qualityStation: '质检站-1',
-  assignee: '',
-  dueAt: '',
-  assignmentRemark: ''
-})
-
-const dispositionForm = reactive({
-  dispositionAction: 'REWORK',
-  recheckRequired: false,
-  dispositionRemark: ''
-})
-
-const reworkForm = reactive({
-  reworkResult: '',
-  reworkOperator: '',
-  recheckRequired: true,
-  reworkRemark: ''
 })
 
 const defectFilters = reactive({
@@ -879,6 +833,38 @@ const refreshDefectGalleryIfVisible = async () => {
   }
 }
 
+const {
+  reviewDialogVisible,
+  reviewSubmitting,
+  reviewTask,
+  reviewForm,
+  assignmentDialogVisible,
+  assignmentSubmitting,
+  assignmentTask,
+  assignmentForm,
+  dispositionDialogVisible,
+  dispositionSubmitting,
+  dispositionTask,
+  dispositionForm,
+  reworkDialogVisible,
+  reworkSubmitting,
+  reworkTask,
+  reworkForm,
+  openReviewDialog,
+  submitTaskReview,
+  openAssignmentDialog,
+  submitQualityAssignment,
+  openDispositionDialog,
+  submitTaskDisposition,
+  openReworkDialog,
+  submitTaskRework
+} = useQualityTaskActions({
+  taskStore,
+  fetchTaskResults,
+  refreshQualityQueue: refreshQualityQueueIfVisible,
+  refreshDefectGallery: refreshDefectGalleryIfVisible
+})
+
 const handleTabChange = async (tabName) => {
   if (tabName === 'quality' && !qualityQueueRecords.value.length) {
     await loadQualityQueue(1)
@@ -887,11 +873,11 @@ const handleTabChange = async (tabName) => {
     await loadDefectGallery(1)
   }
   if (tabName === 'work-order-trace' && !workOrderTraceReport.value && !workOrderTraceLoading.value) {
-    workOrderTraceNo.value = workOrderTraceNo.value || demoWorkOrderNos[0]
+    workOrderTraceNo.value = workOrderTraceNo.value || businessWorkOrderNos[0]
     await loadWorkOrderTraceReport()
   }
   if (tabName === 'batch-trace' && !batchTraceReport.value && !batchTraceLoading.value) {
-    batchTraceNo.value = batchTraceNo.value || demoBatchNos[0]
+    batchTraceNo.value = batchTraceNo.value || businessBatchNos[0]
     await loadBatchTraceReport()
   }
   const targetPath = tabRouteMap[tabName]
@@ -1000,20 +986,12 @@ const getStatType = (key) => {
 
 // ==================== 单图检测 ====================
 
-const beforeUpload = (file) => {
-  form.imageFile = file
-  fileList.value = [{ uid: `${Date.now()}`, name: file.name, status: 'done', originFileObj: file }]
-  detectionResult.value = null
-  annotatedImageUrl.value = ''
-  return false
-}
-
-const handleRemove = () => {
-  form.imageFile = null
-  fileList.value = []
-  detectionResult.value = null
-  annotatedImageUrl.value = ''
-}
+const { handleUploadChange, handleRemove } = useSingleImageUploadPreview({
+  form,
+  fileList,
+  detectionResult,
+  annotatedImageUrl
+})
 
 const handleSingleDetection = async () => {
   if (!form.imageFile) {
@@ -1299,207 +1277,6 @@ const qualityActionHintType = (task) => {
   return 'info'
 }
 
-const applyTaskProgressUpdate = async (taskId, data, fallbackMessage) => {
-  taskStore.updateTask(taskId, {
-    flowStatus: data.flowStatus,
-    qualityStation: data.qualityStation,
-    assignee: data.assignee,
-    assignmentRemark: data.assignmentRemark,
-    assignedAt: data.assignedAt,
-    dueAt: data.dueAt,
-    reviewStatus: data.reviewStatus,
-    reviewConclusion: data.reviewConclusion,
-    severityLevel: data.severityLevel,
-    confirmedDefectCount: data.confirmedDefectCount,
-    falsePositiveCount: data.falsePositiveCount,
-    reviewRemark: data.reviewRemark,
-    reviewer: data.reviewer,
-    reviewedAt: data.reviewedAt,
-    dispositionStatus: data.dispositionStatus,
-    dispositionAction: data.dispositionAction,
-    dispositionRemark: data.dispositionRemark,
-    dispositionOperator: data.dispositionOperator,
-    disposedAt: data.disposedAt,
-    recheckRequired: data.recheckRequired,
-    reworkResult: data.reworkResult,
-    reworkOperator: data.reworkOperator,
-    reworkRemark: data.reworkRemark,
-    reworkCompletedAt: data.reworkCompletedAt,
-    message: data.message || fallbackMessage
-  })
-  await fetchTaskResults([taskId])
-}
-
-const openReviewDialog = (task) => {
-  reviewTask.value = task
-  reviewForm.reviewConclusion = task.reviewConclusion || 'CONFIRMED_DEFECT'
-  reviewForm.severityLevel = task.severityLevel || 'MAJOR'
-  reviewForm.confirmedDefectCount = task.confirmedDefectCount ?? 0
-  reviewForm.falsePositiveCount = task.falsePositiveCount ?? 0
-  reviewForm.reviewRemark = task.reviewRemark || ''
-  reviewDialogVisible.value = true
-}
-
-const submitTaskReview = async () => {
-  if (!reviewTask.value?.taskId) {
-    ElMessage.error('请选择需要复核的任务')
-    return
-  }
-
-  reviewSubmitting.value = true
-  try {
-    const response = await reviewDetectionTask(reviewTask.value.taskId, {
-      reviewConclusion: reviewForm.reviewConclusion,
-      severityLevel: reviewForm.severityLevel,
-      confirmedDefectCount: reviewForm.confirmedDefectCount,
-      falsePositiveCount: reviewForm.falsePositiveCount,
-      reviewRemark: reviewForm.reviewRemark
-    })
-    if (response.data?.code === 200) {
-      const data = response.data.data
-      await applyTaskProgressUpdate(reviewTask.value.taskId, data, '人工复核已完成')
-      await refreshQualityQueueIfVisible()
-      await refreshDefectGalleryIfVisible()
-      reviewDialogVisible.value = false
-      ElMessage.success('人工复核已提交')
-    } else {
-      ElMessage.error(response.data?.message || '人工复核提交失败')
-    }
-  } catch (error) {
-    console.error('人工复核提交失败:', error)
-    ElMessage.error(error.response?.data?.message || '人工复核提交失败')
-  } finally {
-    reviewSubmitting.value = false
-  }
-}
-
-const openAssignmentDialog = (task) => {
-  assignmentTask.value = task
-  assignmentForm.qualityStation = task.qualityStation || task.result?.qualityStation || '质检站-1'
-  assignmentForm.assignee = task.assignee || task.result?.assignee || ''
-  assignmentForm.dueAt = task.dueAt || task.result?.dueAt || ''
-  assignmentForm.assignmentRemark = task.assignmentRemark || task.result?.assignmentRemark || ''
-  assignmentDialogVisible.value = true
-}
-
-const submitQualityAssignment = async () => {
-  if (!assignmentTask.value?.taskId) {
-    ElMessage.error('请选择需要分派的任务')
-    return
-  }
-  if (!assignmentForm.qualityStation.trim() || !assignmentForm.assignee.trim()) {
-    ElMessage.warning('请填写质检站点和责任人')
-    return
-  }
-
-  assignmentSubmitting.value = true
-  try {
-    const response = await assignDetectionQualityTask(assignmentTask.value.taskId, {
-      qualityStation: assignmentForm.qualityStation,
-      assignee: assignmentForm.assignee,
-      dueAt: assignmentForm.dueAt,
-      assignmentRemark: assignmentForm.assignmentRemark
-    })
-    if (response.data?.code === 200) {
-      await applyTaskProgressUpdate(assignmentTask.value.taskId, response.data.data, '质检任务已分派')
-      await refreshQualityQueueIfVisible()
-      assignmentDialogVisible.value = false
-      ElMessage.success('质检任务已分派')
-    } else {
-      ElMessage.error(response.data?.message || '质检分派失败')
-    }
-  } catch (error) {
-    console.error('质检分派失败:', error)
-    ElMessage.error(error.response?.data?.message || '质检分派失败')
-  } finally {
-    assignmentSubmitting.value = false
-  }
-}
-
-const openDispositionDialog = (task) => {
-  dispositionTask.value = task
-  dispositionForm.dispositionAction = canReleaseDisposition(task) ? 'RELEASE' : 'REWORK'
-  dispositionForm.recheckRequired = task.reviewConclusion === 'NEEDS_RECHECK'
-  dispositionForm.dispositionRemark = task.dispositionRemark || ''
-  dispositionDialogVisible.value = true
-}
-
-const submitTaskDisposition = async () => {
-  if (!dispositionTask.value?.taskId) {
-    ElMessage.error('请选择需要处置的任务')
-    return
-  }
-  if (dispositionForm.dispositionAction === 'RELEASE' && !canReleaseDisposition(dispositionTask.value)) {
-    ElMessage.warning('确认缺陷或待复检任务不能直接放行，请选择返工、复检、暂挂或报废')
-    return
-  }
-
-  dispositionSubmitting.value = true
-  try {
-    const response = await disposeDetectionTask(dispositionTask.value.taskId, {
-      dispositionAction: dispositionForm.dispositionAction,
-      recheckRequired: dispositionForm.recheckRequired,
-      dispositionRemark: dispositionForm.dispositionRemark
-    })
-    if (response.data?.code === 200) {
-      await applyTaskProgressUpdate(dispositionTask.value.taskId, response.data.data, '质检处置已完成')
-      await refreshQualityQueueIfVisible()
-      dispositionDialogVisible.value = false
-      ElMessage.success('质检处置已提交')
-    } else {
-      ElMessage.error(response.data?.message || '质检处置提交失败')
-    }
-  } catch (error) {
-    console.error('质检处置提交失败:', error)
-    ElMessage.error(error.response?.data?.message || '质检处置提交失败')
-  } finally {
-    dispositionSubmitting.value = false
-  }
-}
-
-const openReworkDialog = (task) => {
-  reworkTask.value = task
-  reworkForm.reworkResult = task.reworkResult || ''
-  reworkForm.reworkOperator = task.reworkOperator || ''
-  reworkForm.recheckRequired = task.recheckRequired !== false
-  reworkForm.reworkRemark = task.reworkRemark || ''
-  reworkDialogVisible.value = true
-}
-
-const submitTaskRework = async () => {
-  if (!reworkTask.value?.taskId) {
-    ElMessage.error('请选择需要回填返工结果的任务')
-    return
-  }
-  if (!reworkForm.reworkResult.trim()) {
-    ElMessage.warning('请填写返工结果')
-    return
-  }
-
-  reworkSubmitting.value = true
-  try {
-    const response = await submitDetectionReworkResult(reworkTask.value.taskId, {
-      reworkResult: reworkForm.reworkResult,
-      reworkOperator: reworkForm.reworkOperator,
-      reworkRemark: reworkForm.reworkRemark,
-      recheckRequired: reworkForm.recheckRequired
-    })
-    if (response.data?.code === 200) {
-      await applyTaskProgressUpdate(reworkTask.value.taskId, response.data.data, '返工结果已提交')
-      await refreshQualityQueueIfVisible()
-      reworkDialogVisible.value = false
-      ElMessage.success('返工结果已提交')
-    } else {
-      ElMessage.error(response.data?.message || '返工结果提交失败')
-    }
-  } catch (error) {
-    console.error('返工结果提交失败:', error)
-    ElMessage.error(error.response?.data?.message || '返工结果提交失败')
-  } finally {
-    reworkSubmitting.value = false
-  }
-}
-
 const openTraceDialog = async (taskId) => {
   traceDialogVisible.value = true
   traceLoading.value = true
@@ -1567,12 +1344,12 @@ const loadBatchTraceReport = async () => {
   }
 }
 
-const useDemoWorkOrder = async (workOrderNo) => {
+const loadBusinessWorkOrderTrace = async (workOrderNo) => {
   workOrderTraceNo.value = workOrderNo
   await loadWorkOrderTraceReport()
 }
 
-const useDemoBatch = async (batchNo) => {
+const loadBusinessBatchTrace = async (batchNo) => {
   batchTraceNo.value = batchNo
   await loadBatchTraceReport()
 }

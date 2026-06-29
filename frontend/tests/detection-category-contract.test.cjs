@@ -10,6 +10,10 @@ const homeSource = fs.readFileSync(
   path.join(__dirname, '..', 'src', 'views', 'Home.vue'),
   'utf8'
 )
+const detectionTaskStoreSource = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'stores', 'taskStore.js'),
+  'utf8'
+)
 
 for (const pair of [
   ['Normal', '正常'],
@@ -20,9 +24,13 @@ for (const pair of [
   ['Compromised', '结构损伤']
 ]) {
   const [code, label] = pair
-  assert.match(imageDetectionSource, new RegExp(code))
-  assert.match(imageDetectionSource, new RegExp(label))
+  assert.match(detectionTaskStoreSource, new RegExp(code))
+  assert.match(detectionTaskStoreSource, new RegExp(label))
 }
+
+assert.match(imageDetectionSource, /CATEGORY_LABELS/)
+assert.match(imageDetectionSource, /CATEGORY_ALIASES/)
+assert.match(imageDetectionSource, /CATEGORY_COLORS/)
 
 assert.doesNotMatch(imageDetectionSource, /BSGXX:\s*'正常'/)
 assert.doesNotMatch(imageDetectionSource, /BSGZX:\s*'维修'/)

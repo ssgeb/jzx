@@ -10,6 +10,7 @@ import com.ruanzhu.doorhandlecatch.dto.chat.AgentGraphHealthResponse;
 import com.ruanzhu.doorhandlecatch.service.AgentOrchestratorService;
 import com.ruanzhu.doorhandlecatch.service.AgentGraphRunMonitor;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
+import com.ruanzhu.doorhandlecatch.service.SpeechTranscriptionService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -17,8 +18,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/chat-assistant")
@@ -29,6 +32,7 @@ public class ChatAssistantController {
     private final ChatSessionService chatSessionService;
     private final AgentOrchestratorService agentOrchestratorService;
     private final AgentGraphRunMonitor agentGraphRunMonitor;
+    private final SpeechTranscriptionService speechTranscriptionService;
 
     // ---- 会话管理 ----
 
@@ -118,5 +122,11 @@ public class ChatAssistantController {
     public Result<ChatMessageResponse> confirm(Authentication authentication,
                                                @Valid @RequestBody ChatConfirmActionRequest request) {
         return Result.success(agentOrchestratorService.confirmAction(authentication.getName(), request));
+    }
+
+    @PostMapping(value = "/voice/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<Map<String, String>> transcribeVoice(@RequestParam("file") MultipartFile file) {
+        String text = speechTranscriptionService.transcribe(file);
+        return Result.success(Map.of("text", text));
     }
 }

@@ -47,9 +47,10 @@ public class ResourceAgentServiceImpl implements ResourceAgentService {
                     ? deepSeekClient.generateResourceResponse(userPrompt, dataContext)
                     : deepSeekClient.generateResourceResponseStream(userPrompt, dataContext, tokenConsumer);
         } catch (Exception e) {
-            log.warn("DeepSeek 回复生成失败，使用模板回复", e);
+            log.warn("DeepSeek 回复生成失败，使用模板回复: {}", e.getMessage());
             content = fallbackResourceAnswer(userPrompt);
         }
+        content = appendSourceIfMissing(content);
         return AgentExecutionResult.builder().messageType("TEXT").intent("RESOURCE_QUERY").content(content).build();
     }
 
@@ -158,13 +159,20 @@ public class ResourceAgentServiceImpl implements ResourceAgentService {
         return value == null ? "未知" : String.valueOf(value);
     }
 
+    private String appendSourceIfMissing(String content) {
+        if (content == null || content.contains("来源：")) {
+            return content;
+        }
+        return content + "\n\n来源：系统数据";
+    }
+
     @Override
     public AgentExecutionResult executeConfirmedAction(String userPrompt, String username) {
         String content;
         try {
             content = deepSeekClient.generateResourceResponse(userPrompt, "用户确认了一个资源修改操作。当前版本暂不在聊天中直接执行复杂表单写操作。");
         } catch (Exception e) {
-            log.warn("DeepSeek 回复生成失败", e);
+            log.warn("DeepSeek 回复生成失败: {}", e.getMessage());
             content = "我已经收到资源修改类操作的确认。当前第一版先不在聊天里直接落库执行复杂表单写操作，我建议你告诉我更具体的目标字段，我会先帮你整理成可执行变更说明，或者你也可以去对应管理页完成最终提交。";
         }
         return AgentExecutionResult.builder().messageType("TEXT").intent("RESOURCE_ACTION").content(content).build();

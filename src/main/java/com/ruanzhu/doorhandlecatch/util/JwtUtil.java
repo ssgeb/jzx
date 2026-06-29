@@ -16,15 +16,32 @@ import java.util.Map;
 
 @Component
 public class JwtUtil {
-    @Value("${jwt.secret:your-secret-key}")
+    private static final int MIN_SECRET_BYTES = 32;
+
+    @Value("${jwt.secret:}")
     private String secret;
 
     @Value("${jwt.expiration:86400}")
     private Long expiration;
 
     private Key getSigningKey() {
+        validateSecret();
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    private void validateSecret() {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("JWT_SECRET must be configured with a secure value.");
+        }
+        String normalizedSecret = secret.trim().toLowerCase();
+        if (normalizedSecret.contains("your-secret-key")
+                || normalizedSecret.contains("doorhandlecatch-jwt-secret")) {
+            throw new IllegalStateException("JWT_SECRET must be configured with a secure value.");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException("JWT_SECRET must be at least 32 bytes for HS256.");
+        }
     }
 
     public String generateToken(String username) {
@@ -86,4 +103,4 @@ public class JwtUtil {
             return true;
         }
     }
-} 
+}

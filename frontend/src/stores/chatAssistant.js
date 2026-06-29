@@ -34,6 +34,7 @@ export const useChatAssistantStore = defineStore('chatAssistant', () => {
   const messages = ref([])
   const loading = ref(false)
   const bootstrapped = ref(false)
+  const confirmingActionIds = ref(new Set())
 
   // 多会话
   const sessions = ref([])
@@ -473,7 +474,10 @@ export const useChatAssistantStore = defineStore('chatAssistant', () => {
 
   const confirmAction = async (actionId, confirmed) => {
     if (!actionId) return
+    if (confirmingActionIds.value.has(actionId)) return
     stopPolling()
+    confirmingActionIds.value.add(actionId)
+    confirmingActionIds.value = new Set(confirmingActionIds.value)
     loading.value = true
     try {
       await confirmChatAction({
@@ -487,6 +491,8 @@ export const useChatAssistantStore = defineStore('chatAssistant', () => {
       ElMessage.error(error.response?.data?.message || error.message || '执行确认失败')
       throw error
     } finally {
+      confirmingActionIds.value.delete(actionId)
+      confirmingActionIds.value = new Set(confirmingActionIds.value)
       loading.value = false
     }
   }
@@ -533,6 +539,7 @@ export const useChatAssistantStore = defineStore('chatAssistant', () => {
     sessionStatus,
     messages,
     loading,
+    confirmingActionIds,
     sessions,
     sessionsLoading,
     projects,

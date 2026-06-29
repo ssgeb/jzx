@@ -9,6 +9,8 @@ import com.ruanzhu.doorhandlecatch.dto.chat.AgentExecutionResult;
 import com.ruanzhu.doorhandlecatch.dto.detection.CreateDetectionTaskRequest;
 import com.ruanzhu.doorhandlecatch.dto.detection.CreateDetectionTaskResponse;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionCaptureInfo;
+import com.ruanzhu.doorhandlecatch.dto.detection.DetectionDispositionRequest;
+import com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskProgressResponse;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadFileRequest;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
@@ -72,6 +74,11 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
     @Override
     public String previewAction(String userPrompt) {
+        QualityDispositionAction qualityAction = detectQualityDispositionAction(userPrompt);
+        if (qualityAction != null) {
+            return "确认后将把工单「" + qualityAction.targetNo() + "」关联的质检任务标记为「"
+                    + qualityAction.displayName() + "」。我会先按工单查询系统数据，再提交质检处置。";
+        }
         String folderPath = extractFolderPath(userPrompt);
         if (folderPath != null) {
             return "检测到本地文件夹路径：「" + folderPath + "」。确认后将自动扫描该文件夹中的图片文件，创建检测任务并上传到 OSS 进行检测。";
@@ -89,6 +96,11 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
     @Override
     public AgentExecutionResult executeConfirmedAction(String userPrompt, String username, String sessionId) {
+        QualityDispositionAction qualityAction = detectQualityDispositionAction(userPrompt);
+        if (qualityAction != null) {
+            return executeQualityDispositionAction(qualityAction);
+        }
+
         // 1. 尝试识别为文件夹上传
         String folderPath = extractFolderPath(userPrompt);
         if (folderPath == null) {
@@ -107,6 +119,43 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
         // 3. 没有文件夹路径 → 尝试识别为"开始检测"
         return executeStartDetectionFlow(userPrompt, sessionId);
+    }
+
+    private AgentExecutionResult executeQualityDispositionAction(QualityDispositionAction action) {
+        DetectionTask task = findTaskForQualityAction(action);
+        if (task == null) {
+            return AgentExecutionResult.builder()
+                    .messageType("TEXT")
+                    .intent("DETECTION_ACTION")
+                    .content("系统中未找到工单「" + action.targetNo() + "」关联的质检任务，未执行任何处置。\n\n来源：系统数据")
+                    .build();
+        }
+
+        DetectionDispositionRequest request = new DetectionDispositionRequest();
+        request.setDispositionAction(action.dispositionAction());
+        request.setRecheckRequired("REWORK".equals(action.dispositionAction()) || "RECHECK".equals(action.dispositionAction()));
+        request.setDispositionRemark("智能助手确认后提交：" + action.displayName());
+
+        DetectionTaskProgressResponse response = detectionTaskService.disposeTask(task.getTaskId(), request);
+        String content = "已将工单「" + defaultText(response.getWorkOrderNo()) + "」关联任务「"
+                + response.getTaskId() + "」标记为" + action.displayName() + "。\n\n"
+                + "- 当前流转状态：" + defaultText(response.getFlowStatus()) + "\n"
+                + "- 处置动作：" + defaultText(response.getDispositionAction()) + "\n"
+                + "- 系统消息：" + defaultText(response.getMessage()) + "\n\n"
+                + "来源：系统数据";
+        return AgentExecutionResult.builder()
+                .messageType("TEXT")
+                .intent("DETECTION_ACTION")
+                .content(content)
+                .build();
+    }
+
+    private DetectionTask findTaskForQualityAction(QualityDispositionAction action) {
+        List<DetectionTask> tasks = detectionTaskMapper.selectList(new LambdaQueryWrapper<DetectionTask>()
+                .eq(DetectionTask::getWorkOrderNo, action.targetNo())
+                .orderByDesc(DetectionTask::getUpdatedAt)
+                .last("limit 1"));
+        return tasks == null || tasks.isEmpty() ? null : tasks.get(0);
     }
 
     /** 上传流程：扫描文件夹 → 创建任务 → 异步上传 + 自动触发检测 */
@@ -1189,6 +1238,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("type", "batch-trace");
         payload.put("title", "批次追溯报告");
         payload.put("description", "已汇总该批次的任务、缺陷、质检闭环、设备模型和时间链路。");
+        payload.put("sources", traceSources());
         payload.put("batchNo", report.getOrDefault("batchNo", batchNo));
         payload.put("route", "#/detection?tab=batch-trace&batchNo=" + encodeUrl(String.valueOf(report.getOrDefault("batchNo", batchNo))));
         payload.put("metrics", List.of(
@@ -1228,6 +1278,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("type", "work-order-trace");
         payload.put("title", "工单追溯报告");
         payload.put("description", "已汇总该工单覆盖的批次、设备、缺陷检测和质检流转闭环。");
+        payload.put("sources", traceSources());
         payload.put("workOrderNo", report.getOrDefault("workOrderNo", workOrderNo));
         payload.put("route", "#/detection?tab=work-order-trace&workOrderNo="
                 + encodeUrl(String.valueOf(report.getOrDefault("workOrderNo", workOrderNo))));
@@ -1295,6 +1346,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("description", safeTasks.isEmpty()
                 ? "当前没有待处理的质检闭环任务。"
                 : "已汇总待复核、处置、返工、复检和失败任务，建议优先处理高严重等级与失败项。");
+        payload.put("sources", List.of(source("系统数据", "检测任务、质检复核、处置流转")));
         payload.put("route", "#/detection?tab=quality");
         payload.put("metrics", List.of(
                 Map.of("label", "待复核", "value", pendingReview, "tone", "blue"),
@@ -1346,6 +1398,10 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("type", "defect-gallery");
         payload.put("title", "缺陷证据库");
         payload.put("description", "已按缺陷类型、严重等级、设备和批次筛选证据链，便于快速定位复核。");
+        payload.put("sources", List.of(
+                source("模型结果", "缺陷类型、置信度、严重等级和证据图"),
+                source("系统数据", "关联任务、批次、工单和设备")
+        ));
         payload.put("route", buildDefectGalleryRoute(criteria));
         payload.put("filters", Map.of(
                 "defectType", filterText(criteria.defectType()),
@@ -1402,6 +1458,47 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
     }
 
     private record DefectGalleryCriteria(String defectType, String severityLevel, String deviceName, String batchNo) {
+    }
+
+    private record QualityDispositionAction(String targetNo, String dispositionAction, String displayName) {
+    }
+
+    private QualityDispositionAction detectQualityDispositionAction(String userPrompt) {
+        if (!StringUtils.hasText(userPrompt)) {
+            return null;
+        }
+        String workOrderNo = extractWorkOrderNo(userPrompt);
+        if (!StringUtils.hasText(workOrderNo)) {
+            return null;
+        }
+        String text = userPrompt.toLowerCase(Locale.ROOT);
+        if (text.contains("返工") || text.contains("rework")) {
+            return new QualityDispositionAction(workOrderNo, "REWORK", "返工");
+        }
+        if (text.contains("放行") || text.contains("release")) {
+            return new QualityDispositionAction(workOrderNo, "RELEASE", "放行");
+        }
+        if (text.contains("复检") || text.contains("recheck")) {
+            return new QualityDispositionAction(workOrderNo, "RECHECK", "复检");
+        }
+        if (text.contains("报废") || text.contains("scrap")) {
+            return new QualityDispositionAction(workOrderNo, "SCRAP", "报废");
+        }
+        if (text.contains("挂起") || text.contains("hold")) {
+            return new QualityDispositionAction(workOrderNo, "HOLD", "挂起");
+        }
+        return null;
+    }
+
+    private List<Map<String, String>> traceSources() {
+        return List.of(
+                source("系统数据", "检测任务、批次、工单、设备和质检流转"),
+                source("模型结果", "缺陷数量、缺陷类型、置信度和严重等级")
+        );
+    }
+
+    private Map<String, String> source(String type, String detail) {
+        return Map.of("type", type, "detail", detail);
     }
 
     private boolean isSevere(String severity) {

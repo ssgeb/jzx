@@ -1,5 +1,6 @@
 <template>
   <button
+    ref="launcherRef"
     class="launcher-btn"
     :class="{ 'is-dragging': isDragging }"
     :style="btnStyle"
@@ -24,11 +25,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 
 const emit = defineEmits(['open'])
 
 const STORAGE_KEY = 'chatLauncherPos'
+const SAFE_INSET = 12
+const launcherRef = ref(null)
 
 // 读取保存的位置，默认右下角
 const loadPos = () => {
@@ -59,8 +62,25 @@ let startX = 0, startY = 0, startPosX = 0, startPosY = 0
 let hasMoved = false
 
 const getBtnRect = () => {
-  const el = document.querySelector('.launcher-btn')
+  const el = launcherRef.value
   return el ? el.getBoundingClientRect() : { left: 0, top: 0, width: 140, height: 50 }
+}
+
+const savePosition = () => {
+  if (posX.value === null || posY.value === null) return
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: posX.value, y: posY.value }))
+  } catch { /* ignore storage restrictions */ }
+}
+
+const clampToViewport = () => {
+  if (posX.value === null || posY.value === null) return
+  const rect = getBtnRect()
+  const maxX = Math.max(SAFE_INSET, window.innerWidth - rect.width - SAFE_INSET)
+  const maxY = Math.max(SAFE_INSET, window.innerHeight - rect.height - SAFE_INSET)
+  posX.value = Math.min(Math.max(posX.value, SAFE_INSET), maxX)
+  posY.value = Math.min(Math.max(posY.value, SAFE_INSET), maxY)
+  savePosition()
 }
 
 const onMouseDown = (e) => {
@@ -107,10 +127,10 @@ const moveDrag = (clientX, clientY) => {
 
   // 限制在视口内
   const rect = getBtnRect()
-  const maxX = window.innerWidth - rect.width
-  const maxY = window.innerHeight - rect.height
-  newX = Math.max(0, Math.min(newX, maxX))
-  newY = Math.max(0, Math.min(newY, maxY))
+  const maxX = Math.max(SAFE_INSET, window.innerWidth - rect.width - SAFE_INSET)
+  const maxY = Math.max(SAFE_INSET, window.innerHeight - rect.height - SAFE_INSET)
+  newX = Math.max(SAFE_INSET, Math.min(newX, maxX))
+  newY = Math.max(SAFE_INSET, Math.min(newY, maxY))
 
   posX.value = newX
   posY.value = newY
@@ -131,7 +151,7 @@ const onTouchEnd = () => {
 const endDrag = () => {
   isDragging.value = false
   if (hasMoved && posX.value !== null) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: posX.value, y: posY.value }))
+    clampToViewport()
   }
 }
 
@@ -141,7 +161,13 @@ const onClick = () => {
   }
 }
 
+onMounted(() => {
+  window.addEventListener('resize', clampToViewport)
+  nextTick(clampToViewport)
+})
+
 onUnmounted(() => {
+  window.removeEventListener('resize', clampToViewport)
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('touchmove', onTouchMove)

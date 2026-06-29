@@ -41,6 +41,28 @@ def extract_relative_path(source_prefix: str, object_key: str) -> str:
     return object_key.rsplit("/", 1)[-1]
 
 
+def build_single_image_result(per_image_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if len(per_image_results) != 1:
+        return None
+    detections = per_image_results[0].get("detections", [])
+    if not detections:
+        return None
+    top_detection = max(
+        detections,
+        key=lambda item: float(item.get("confidence", item.get("score", 0.0)) or 0.0),
+    )
+    confidence = top_detection.get("confidence", top_detection.get("score"))
+    category = str(
+        top_detection.get("defectType")
+        or top_detection.get("label")
+        or top_detection.get("category")
+        or ""
+    ).strip()
+    if not category or confidence is None:
+        return None
+    return {"category": category, "confidence": float(confidence)}
+
+
 def build_statistics(per_image_results: List[Dict[str, Any]], failed_images: int) -> Dict[str, Any]:
     class_counts = {
         "Normal": 0,
@@ -79,6 +101,9 @@ def build_statistics(per_image_results: List[Dict[str, Any]], failed_images: int
     total_images = len(per_image_results) + failed_images
     if total_images > 0:
         statistics["missDetectionRate"] = statistics["noDetectionImages"] / total_images
+    single_image_result = build_single_image_result(per_image_results)
+    if single_image_result is not None:
+        statistics["singleImageResult"] = single_image_result
     return statistics
 
 
@@ -93,18 +118,21 @@ def build_defect_evidence(per_image_results: List[Dict[str, Any]]) -> List[Dict[
             if not label or label.lower() == "normal":
                 continue
             bbox = detection.get("bbox") or detection.get("box") or {}
+            confidence = detection.get("confidence", detection.get("score"))
             area = detection.get("area")
             if area is None and isinstance(bbox, dict):
                 width = float(bbox.get("width") or bbox.get("w") or 0)
                 height = float(bbox.get("height") or bbox.get("h") or 0)
                 area = width * height
+            elif area is None and isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                area = abs(float(bbox[2]) - float(bbox[0])) * abs(float(bbox[3]) - float(bbox[1]))
             evidence.append(
                 {
                     "imageName": image_name,
                     "sourceKey": source_key,
                     "previewKey": preview_key,
                     "defectType": label,
-                    "confidence": detection.get("confidence"),
+                    "confidence": confidence,
                     "area": area,
                     "positionRegion": str(detection.get("positionRegion") or detection.get("region") or "UNKNOWN").upper(),
                     "severityLevel": str(detection.get("severityLevel") or detection.get("severity") or "MINOR").upper(),

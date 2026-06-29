@@ -84,6 +84,7 @@
           <ChatPendingActionCard
             v-if="item.messageType === 'PENDING_ACTION'"
             :message="item"
+            :busy="confirmingActionIds.has(item.actionId)"
             @confirm="handleConfirm"
           />
 
@@ -95,7 +96,11 @@
 
           <!-- 普通消息气泡 -->
           <div v-else class="msg-bubble" :class="item.role">
-            <div class="msg-content" v-html="formatMessage(item.content)"></div>
+            <div class="msg-content" v-html="formatMessage(messageBodyContent(item.content))"></div>
+            <div v-if="messageSourceText(item.content)" class="msg-source-strip">
+              <span class="msg-source-label">来源</span>
+              <span class="msg-source-chip">{{ messageSourceText(item.content) }}</span>
+            </div>
           </div>
 
           <!-- 时间 -->
@@ -143,13 +148,25 @@ import ChatPendingActionCard from './ChatPendingActionCard.vue'
 
 defineProps({
   messages: { type: Array, default: () => [] },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  confirmingActionIds: { type: Object, default: () => new Set() }
 })
 
 const emit = defineEmits(['confirm', 'send'])
 
 const handleConfirm = (actionId, confirmed) => {
   emit('confirm', actionId, confirmed)
+}
+
+const SOURCE_PATTERN = /(?:^|\n)\s*来源[:：]\s*(.+?)\s*$/
+
+const messageSourceText = (content) => {
+  const match = String(content || '').match(SOURCE_PATTERN)
+  return match ? match[1].trim() : ''
+}
+
+const messageBodyContent = (content) => {
+  return String(content || '').replace(SOURCE_PATTERN, '').trimEnd()
 }
 
 const formatTime = (val) => {
@@ -426,6 +443,32 @@ const escapeHtml = (str) => {
 
 .msg-content {
   word-break: break-word;
+}
+
+.msg-source-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.msg-source-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.msg-source-chip {
+  padding: 2px 8px;
+  border: 1px solid rgba(20, 184, 166, 0.26);
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.08);
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 /* ── Markdown 样式 ── */
