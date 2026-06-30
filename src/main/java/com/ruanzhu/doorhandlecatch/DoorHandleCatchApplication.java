@@ -13,8 +13,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.io.File;
 import java.io.IOException;
@@ -44,23 +42,6 @@ public class DoorHandleCatchApplication {
 		ConfigurableApplicationContext context = SpringApplication.run(DoorHandleCatchApplication.class, args);
 		
 		logger.info("门把手检测系统后端已启动完成！");
-	}
-	
-	/**
-	 * 配置CORS跨域资源共享
-	 */
-	@Bean
-	public WebMvcConfigurer corsConfigurer() {
-		return new WebMvcConfigurer() {
-			@Override
-			public void addCorsMappings(CorsRegistry registry) {
-				registry.addMapping("/**")
-					.allowedOrigins("*")
-					.allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-					.allowedHeaders("*")
-					.maxAge(3600);
-			}
-		};
 	}
 	
 	/**

@@ -1,6 +1,6 @@
 <template>
   <div class="layout-shell" :class="{ 'sidebar-collapsed': collapsed }">
-    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <button class="skip-link" type="button" @click="skipToMainContent">跳到主要内容</button>
     <aside class="layout-sidebar app-panel" aria-label="系统导航">
       <div class="brand-block">
         <button
@@ -314,6 +314,14 @@ function scrollToTop() {
   }
 }
 
+function skipToMainContent() {
+  const main = document.querySelector('.layout-content')
+  const mainContent = document.getElementById('main-content')
+  if (!main || !mainContent) return
+  mainContent.focus({ preventScroll: true })
+  main.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
 onMounted(() => {
   const main = document.querySelector('.layout-content')
   if (main) main.addEventListener('scroll', handleScroll, { passive: true })
@@ -330,8 +338,8 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   height: 100vh;
-  padding: 18px;
-  gap: 18px;
+  padding: clamp(12px, 1.2vw, 18px);
+  gap: clamp(12px, 1.2vw, 18px);
   overflow: hidden;
   transition: grid-template-columns 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   background:
@@ -572,9 +580,9 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 18px;
-  margin-bottom: 18px;
-  padding: 18px 8px 0;
+  gap: clamp(12px, 1.2vw, 18px);
+  margin-bottom: clamp(12px, 1.2vw, 18px);
+  padding: clamp(12px, 1.2vw, 18px) 8px 0;
   position: relative;
 }
 
@@ -633,7 +641,7 @@ onBeforeUnmount(() => {
 
 .header-title {
   margin: 8px 0 0;
-  font-size: 32px;
+  font-size: clamp(24px, 2vw, 32px);
   line-height: 1.15;
   color: var(--app-text);
   letter-spacing: -0.03em;

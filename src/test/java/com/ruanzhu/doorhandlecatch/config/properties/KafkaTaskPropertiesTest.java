@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestPropertySource(properties = {
         "app.kafka.enabled=true",
         "app.kafka.bootstrap-servers=localhost:9092",
+        "app.kafka.send-timeout-ms=5000",
         "app.kafka.topics.task-created=detection.task.created",
         "app.kafka.topics.task-finished=detection.task.finished",
         "app.kafka.consumer-group=detection-java"
@@ -32,6 +33,7 @@ class KafkaTaskPropertiesTest {
     void bindsKafkaTaskProperties() {
         assertTrue(properties.isEnabled());
         assertEquals("localhost:9092", properties.getBootstrapServers());
+        assertEquals(5000L, properties.getSendTimeoutMs());
         assertEquals("detection.task.created", properties.getTopics().getTaskCreated());
         assertEquals("detection.task.finished", properties.getTopics().getTaskFinished());
         assertEquals("detection-java", properties.getConsumerGroup());

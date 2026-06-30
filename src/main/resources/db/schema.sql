@@ -15,12 +15,13 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     email VARCHAR(100),
     phone VARCHAR(20),
+    role VARCHAR(16) NOT NULL DEFAULT 'OPERATOR',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO users (id, username, password, email, phone)
-VALUES (1, 'admin', '$2b$12$1JubAveAPOmdM2wuxLsHAOGDkXOcAaUff2fraVjbpGcvz/.mrQdf6', 'admin@example.com', '13800138000');
+INSERT IGNORE INTO users (id, username, password, email, phone, role)
+VALUES (1, 'admin', '$2b$12$1JubAveAPOmdM2wuxLsHAOGDkXOcAaUff2fraVjbpGcvz/.mrQdf6', 'admin@example.com', '13800138000', 'ADMIN');
 
 -- ============================================================
 -- 模型管理表（model_id 直接作为主键）
@@ -114,6 +115,8 @@ CREATE TABLE IF NOT EXISTS `detection_task` (
     `due_at` DATETIME DEFAULT NULL COMMENT '质检截止时间',
     `status` VARCHAR(32) NOT NULL COMMENT '任务状态',
     `stage` VARCHAR(32) DEFAULT NULL COMMENT '当前阶段',
+    `dispatch_id` VARCHAR(64) DEFAULT NULL COMMENT '当前检测调度标识',
+    `last_finished_event_id` VARCHAR(128) DEFAULT NULL COMMENT '最后处理的完成事件标识',
     `model_id` INT DEFAULT NULL COMMENT '模型ID（外键 -> model_management.model_id）',
     `model_version` VARCHAR(64) DEFAULT NULL COMMENT '模型版本',
     `threshold` DECIMAL(5,4) DEFAULT 0.5000 COMMENT '检测阈值',
@@ -248,6 +251,7 @@ CREATE TABLE IF NOT EXISTS `chat_pending_action` (
     `status` VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '动作状态',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `confirmed_at` DATETIME DEFAULT NULL COMMENT '确认时间',
+    `error_message` VARCHAR(500) DEFAULT NULL COMMENT '动作失败摘要',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_chat_pending_action_id` (`action_id`),
     KEY `idx_chat_pending_session_id` (`session_id`),

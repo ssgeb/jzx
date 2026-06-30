@@ -41,6 +41,28 @@ def extract_relative_path(source_prefix: str, object_key: str) -> str:
     return object_key.rsplit("/", 1)[-1]
 
 
+def build_single_image_result(per_image_results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if len(per_image_results) != 1:
+        return None
+    detections = per_image_results[0].get("detections", [])
+    if not detections:
+        return None
+    top_detection = max(
+        detections,
+        key=lambda item: float(item.get("confidence", item.get("score", 0.0)) or 0.0),
+    )
+    confidence = top_detection.get("confidence", top_detection.get("score"))
+    category = str(
+        top_detection.get("defectType")
+        or top_detection.get("label")
+        or top_detection.get("category")
+        or ""
+    ).strip()
+    if not category or confidence is None:
+        return None
+    return {"category": category, "confidence": float(confidence)}
+
+
 def build_statistics(per_image_results: List[Dict[str, Any]], failed_images: int) -> Dict[str, Any]:
     class_counts = {
         "Normal": 0,
@@ -79,6 +101,9 @@ def build_statistics(per_image_results: List[Dict[str, Any]], failed_images: int
     total_images = len(per_image_results) + failed_images
     if total_images > 0:
         statistics["missDetectionRate"] = statistics["noDetectionImages"] / total_images
+    single_image_result = build_single_image_result(per_image_results)
+    if single_image_result is not None:
+        statistics["singleImageResult"] = single_image_result
     return statistics
 
 
@@ -93,18 +118,21 @@ def build_defect_evidence(per_image_results: List[Dict[str, Any]]) -> List[Dict[
             if not label or label.lower() == "normal":
                 continue
             bbox = detection.get("bbox") or detection.get("box") or {}
+            confidence = detection.get("confidence", detection.get("score"))
             area = detection.get("area")
             if area is None and isinstance(bbox, dict):
                 width = float(bbox.get("width") or bbox.get("w") or 0)
                 height = float(bbox.get("height") or bbox.get("h") or 0)
                 area = width * height
+            elif area is None and isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                area = abs(float(bbox[2]) - float(bbox[0])) * abs(float(bbox[3]) - float(bbox[1]))
             evidence.append(
                 {
                     "imageName": image_name,
                     "sourceKey": source_key,
                     "previewKey": preview_key,
                     "defectType": label,
-                    "confidence": detection.get("confidence"),
+                    "confidence": confidence,
                     "area": area,
                     "positionRegion": str(detection.get("positionRegion") or detection.get("region") or "UNKNOWN").upper(),
                     "severityLevel": str(detection.get("severityLevel") or detection.get("severity") or "MINOR").upper(),
@@ -133,10 +161,11 @@ def build_finished_event(
         status = "PARTIAL_FAILED"
 
     return DetectionTaskFinishedEvent(
-        event_id=f"{task.task_id}-finished",
+        event_id=f"{task.task_id}-{task.dispatch_id}-finished",
         event_type="DETECTION_TASK_FINISHED",
         event_time=now,
         task_id=task.task_id,
+        dispatch_id=task.dispatch_id,
         status=status,
         result_oss_prefix=result_json_key.rsplit("/", 1)[0] + "/",
         result_json_key=result_json_key,
@@ -261,6 +290,29 @@ def process_task_message(
     return serialize_finished_event(process_created_event(task, bucket, detect_image_bytes))
 
 
+def publish_finished_and_commit(
+    producer: Any,
+    consumer: Any,
+    source_message: Any,
+    topic: str,
+    key: bytes,
+    payload: bytes,
+    timeout_seconds: float,
+) -> None:
+    delivery = {"completed": False, "error": None}
+
+    def on_delivery(error: Any, _message: Any) -> None:
+        delivery["completed"] = True
+        delivery["error"] = error
+
+    producer.produce(topic, key=key, value=payload, callback=on_delivery)
+    remaining = producer.flush(timeout_seconds)
+    if remaining != 0 or not delivery["completed"] or delivery["error"] is not None:
+        reason = delivery["error"] if delivery["error"] is not None else remaining
+        raise RuntimeError(f"finished event delivery failed: {reason}")
+    consumer.commit(message=source_message)
+
+
 def run_worker() -> None:
     from confluent_kafka import Consumer, Producer
 
@@ -291,13 +343,15 @@ def run_worker() -> None:
             finished_payload = serialize_finished_event(
                 process_created_event(task, bucket, default_detector)
             )
-            producer.produce(
-                settings.task_finished_topic,
+            publish_finished_and_commit(
+                producer,
+                consumer,
+                source_message=message,
+                topic=settings.task_finished_topic,
                 key=message.key() or task.task_id.encode("utf-8"),
-                value=finished_payload.encode("utf-8"),
+                payload=finished_payload.encode("utf-8"),
+                timeout_seconds=settings.delivery_timeout_seconds,
             )
-            producer.flush()
-            consumer.commit(message=message)
     finally:
         consumer.close()
 

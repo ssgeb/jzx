@@ -37,6 +37,9 @@ public class AuthController {
     @Value("${jwt.expiration:86400}")
     private Long jwtExpirationSeconds;
 
+    @Value("${app.security.cookie-secure:false}")
+    private Boolean cookieSecure;
+
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request,
                                    HttpServletRequest httpRequest,
@@ -56,8 +59,10 @@ public class AuthController {
             LoginResponse response = authService.login(request);
             // 登录成功，清除失败记录
             loginRateLimiter.recordSuccess(clientIp);
+            String token = response.getToken();
+            response.setToken(null);
             return ResponseEntity.ok()
-                    .header(HttpHeaders.SET_COOKIE, buildAuthCookie(response.getToken(), jwtExpirationSeconds).toString())
+                    .header(HttpHeaders.SET_COOKIE, buildAuthCookie(token, jwtExpirationSeconds).toString())
                     .body(Result.success(response));
         } catch (Exception e) {
             // 登录失败，记录尝试
@@ -124,7 +129,7 @@ public class AuthController {
     private ResponseCookie buildAuthCookie(String token, Long maxAgeSeconds) {
         return ResponseCookie.from(AUTH_COOKIE_NAME, token == null ? "" : token)
                 .httpOnly(true)
-                .secure(false)
+                .secure(Boolean.TRUE.equals(cookieSecure))
                 .path("/")
                 .maxAge(maxAgeSeconds == null ? 0L : maxAgeSeconds)
                 .sameSite("Lax")

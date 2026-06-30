@@ -38,6 +38,7 @@ import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskService;
 import com.ruanzhu.doorhandlecatch.service.ModelService;
 import com.ruanzhu.doorhandlecatch.service.OssStorageService;
+import com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -45,6 +46,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -63,6 +65,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -95,6 +98,7 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
     private final DetectionTaskDispatchService detectionTaskDispatchService;
     private final ChatSessionService chatSessionService;
     private final ObjectMapper objectMapper;
+    private final DetectionTaskAccessPolicy accessPolicy;
 
     @Value("${detection.max-images-per-batch:200}")
     private int maxImagesPerBatch;
@@ -218,26 +222,46 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
     @CacheEvict(cacheNames = {"detection-task", "dashboard", "model"}, allEntries = true)
     public DetectionTaskProgressResponse confirmUploaded(String taskId, DetectionTaskUploadedRequest request) {
         DetectionTask task = getTask(taskId);
-        if (task.getStatus() != null && ("COMPLETED".equals(task.getStatus()) || "DETECTING".equals(task.getStatus()))) {
+        if (!Set.of("UPLOADING", "FAILED").contains(task.getStatus())) {
             return buildProgressResponse(task, "任务已进入检测阶段");
         }
-        if (request.getUploadedFiles() == null || request.getUploadedFiles().isEmpty()) {
+        if (request == null || request.getUploadedFiles() == null || request.getUploadedFiles().isEmpty()) {
             throw new BusinessException("上传文件不能为空");
         }
         List<String> uploadedKeys = validateUploadedKeys(task, request.getUploadedFiles());
+        String uploadedKeysJson = writeJson(uploadedKeys);
+        Integer modelId = request.getModelId() != null ? request.getModelId() : task.getModelId();
+        ModelInfo modelInfo = resolveModelInfo(modelId);
+        String modelVersion = modelInfo != null ? modelInfo.getVersion() : null;
+        BigDecimal threshold = request.getThreshold() == null ? task.getThreshold() : request.getThreshold();
+        String dispatchId = UUID.randomUUID().toString();
+        LocalDateTime now = LocalDateTime.now();
 
-        task.setOriginalImageKeysJson(writeJson(uploadedKeys));
-        task.setModelId(request.getModelId() != null ? request.getModelId() : task.getModelId());
-        ModelInfo modelInfo = resolveModelInfo(task.getModelId());
-        task.setModelVersion(modelInfo != null ? modelInfo.getVersion() : null);
-        task.setThreshold(request.getThreshold() == null ? task.getThreshold() : request.getThreshold());
-        task.setTotalImages(request.getUploadedFiles().size());
+        DetectionTask claim = new DetectionTask();
+        claim.setTaskId(taskId);
+        claim.setOriginalImageKeysJson(uploadedKeysJson);
+        claim.setModelId(modelId);
+        claim.setModelVersion(modelVersion);
+        claim.setThreshold(threshold);
+        claim.setTotalImages(uploadedKeys.size());
+        claim.setDispatchId(dispatchId);
+        claim.setUpdatedAt(now);
+        if (detectionTaskMapper.claimUploaded(claim) != 1) {
+            return buildProgressResponse(getTask(taskId), "任务已进入检测阶段");
+        }
+
+        task.setOriginalImageKeysJson(uploadedKeysJson);
+        task.setModelId(modelId);
+        task.setModelVersion(modelVersion);
+        task.setThreshold(threshold);
+        task.setTotalImages(uploadedKeys.size());
         task.setStatus("UPLOADED");
         task.setStage("UPLOADED");
         task.setFlowStatus("PENDING_DETECTION");
+        task.setDispatchId(dispatchId);
+        task.setLastFinishedEventId(null);
         task.setErrorMessage(null);
-        task.setUpdatedAt(LocalDateTime.now());
-        detectionTaskMapper.updateById(task);
+        task.setUpdatedAt(now);
 
         detectionTaskDispatchService.dispatchTaskAsync(taskId);
         return buildProgressResponse(task, "原图上传完成，已开始提交远程检测任务");
@@ -757,6 +781,8 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
         task.setRecheckRequired(false);
         task.setStartedAt(null);
         task.setFinishedAt(null);
+        task.setDispatchId(UUID.randomUUID().toString());
+        task.setLastFinishedEventId(null);
         task.setUpdatedAt(now);
         detectionTaskMapper.updateById(task);
 
@@ -767,28 +793,9 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
     @Override
     @CacheEvict(cacheNames = {"detection-task", "dashboard"}, allEntries = true)
     public void markUploaded(String taskId, List<DetectionUploadedFileItem> uploadedFiles) {
-        DetectionTask task = getTask(taskId);
-        if (task.getStatus() != null && ("QUEUED".equals(task.getStatus()) || "DETECTING".equals(task.getStatus()) || "COMPLETED".equals(task.getStatus()))) {
-            log.info("任务 {} 已进入检测链路，忽略重复上传完成标记", taskId);
-            return;
-        }
-        if (uploadedFiles == null || uploadedFiles.isEmpty()) {
-            throw new BusinessException("上传文件不能为空");
-        }
-        List<String> uploadedKeys = validateUploadedKeys(task, uploadedFiles);
-        if (uploadedKeys.isEmpty()) {
-            throw new BusinessException("上传文件对象 Key 不能为空");
-        }
-        task.setStatus("UPLOADED");
-        task.setStage("UPLOADED");
-        task.setFlowStatus("PENDING_DETECTION");
-        task.setOriginalImageKeysJson(writeJson(uploadedKeys));
-        task.setTotalImages(uploadedKeys.size());
-        task.setErrorMessage(null);
-        task.setUpdatedAt(LocalDateTime.now());
-        detectionTaskMapper.updateById(task);
-        detectionTaskDispatchService.dispatchTaskAsync(taskId);
-        log.info("任务 {} 已标记为上传完成并提交检测调度", taskId);
+        DetectionTaskUploadedRequest request = new DetectionTaskUploadedRequest();
+        request.setUploadedFiles(uploadedFiles);
+        confirmUploaded(taskId, request);
     }
 
     public DetectionCaptureInfo buildCaptureInfo(DetectionTask task) {
@@ -807,6 +814,7 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
                 .eventType("DETECTION_TASK_CREATED")
                 .eventTime(OffsetDateTime.now(ZoneOffset.ofHours(8)).toString())
                 .taskId(task.getTaskId())
+                .dispatchId(task.getDispatchId())
                 .bucketName(getBucketName())
                 .sourcePrefix(task.getSourceOssPrefix())
                 .originalKeys(readJsonList(task.getOriginalImageKeysJson()))
@@ -818,8 +826,11 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
 
     @CacheEvict(cacheNames = {"detection-task", "dashboard", "model"}, allEntries = true)
     public void completeTask(String taskId, RemoteDetectionTaskResponse response) {
+        DetectionTask task = getTaskForSystem(taskId);
         applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+                .eventId(UUID.randomUUID().toString())
                 .taskId(taskId)
+                .dispatchId(task.getDispatchId())
                 .status(response != null ? response.getStatus() : null)
                 .resultOssPrefix(response != null ? response.getResultOssPrefix() : null)
                 .resultJsonKey(response != null ? response.getResultJsonKey() : null)
@@ -833,12 +844,25 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
                 .build());
     }
 
+    @Transactional
     @CacheEvict(cacheNames = {"detection-task", "dashboard"}, allEntries = true)
     public void applyFinishedEvent(DetectionTaskFinishedEvent event) {
-        DetectionTask task = getTask(event.getTaskId());
+        DetectionTask task = getTaskForSystemLocked(event.getTaskId());
+        boolean staleDispatch = StringUtils.hasText(task.getDispatchId())
+                && !Objects.equals(task.getDispatchId(), event.getDispatchId());
+        boolean duplicateEvent = StringUtils.hasText(event.getEventId())
+                && Objects.equals(task.getLastFinishedEventId(), event.getEventId());
+        if (staleDispatch || duplicateEvent) {
+            log.info("忽略过期或重复的检测完成事件: taskId={}, dispatchId={}, eventId={}",
+                    event.getTaskId(), event.getDispatchId(), event.getEventId());
+            return;
+        }
         task.setStage("UPLOADING_RESULT");
         task.setStatus("UPLOADING_RESULT");
         task.setUpdatedAt(LocalDateTime.now());
+        if (StringUtils.hasText(event.getEventId())) {
+            task.setLastFinishedEventId(event.getEventId());
+        }
         detectionTaskMapper.updateById(task);
 
         task.setProcessedImages(event.getTotalImages() != null ? event.getTotalImages() : task.getTotalImages());
@@ -909,7 +933,7 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
 
     @CacheEvict(cacheNames = {"detection-task", "dashboard"}, allEntries = true)
     public void failTask(String taskId, String errorMessage) {
-        DetectionTask task = getTask(taskId);
+        DetectionTask task = getTaskForSystem(taskId);
         task.setStatus("FAILED");
         task.setStage("FAILED");
         task.setErrorMessage(errorMessage);
@@ -1271,57 +1295,41 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
     }
 
     private DetectionTask getTask(String taskId) {
+        DetectionTask task = getTaskForSystem(taskId);
+        accessPolicy.assertCanAccess(task, SecurityContextHolder.getContext().getAuthentication());
+        return task;
+    }
+
+    private DetectionTask getTaskForSystem(String taskId) {
         DetectionTask task = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
                 .eq(DetectionTask::getTaskId, taskId)
                 .last("limit 1"));
         if (task == null) {
             throw new BusinessException("检测任务不存在");
         }
-        assertTaskOwner(task);
+        return task;
+    }
+
+    private DetectionTask getTaskForSystemLocked(String taskId) {
+        DetectionTask task = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+                .eq(DetectionTask::getTaskId, taskId)
+                .last("limit 1 for update"));
+        if (task == null) {
+            throw new BusinessException("检测任务不存在");
+        }
         return task;
     }
 
     private void applyOwnerFilter(LambdaQueryWrapper<DetectionTask> wrapper) {
-        String username = resolveCurrentUsername();
-        if (!isUserScoped(username)) {
-            return;
-        }
-        wrapper.eq(DetectionTask::getCreatedBy, username);
-    }
-
-    private void assertTaskOwner(DetectionTask task) {
-        if (task == null || !StringUtils.hasText(task.getCreatedBy())) {
-            return;
-        }
-        String username = resolveCurrentUsername();
-        if (!isUserScoped(username)) {
-            return;
-        }
-        if (!task.getCreatedBy().equals(username)) {
-            throw new BusinessException("无权访问该检测任务");
-        }
-    }
-
-    private boolean isUserScoped(String username) {
-        if (!StringUtils.hasText(username) || "anonymous".equals(username)) {
-            return false;
-        }
-        return !isAdminUser(username);
-    }
-
-    private boolean isAdminUser(String username) {
-        if ("admin".equalsIgnoreCase(username)) {
-            return true;
-        }
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getAuthorities() == null) {
-            return false;
+        if (accessPolicy.isAdmin(authentication)) {
+            return;
         }
-        return authentication.getAuthorities().stream()
-                .anyMatch(authority -> {
-                    String value = authority == null ? "" : authority.getAuthority();
-                    return "ROLE_ADMIN".equals(value) || "ADMIN".equals(value);
-                });
+        if (authentication == null || !StringUtils.hasText(authentication.getName())) {
+            wrapper.apply("1 = 0");
+            return;
+        }
+        wrapper.eq(DetectionTask::getCreatedBy, authentication.getName());
     }
 
     private ModelInfo resolveModelInfo(Integer modelId) {

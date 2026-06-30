@@ -418,11 +418,22 @@
 </template>
 
 <script setup>
-import { ref, nextTick, computed, reactive } from 'vue'
+import { ref, nextTick, computed, reactive, watch } from 'vue'
 import { useChatAssistantStore } from '@/stores/chatAssistant'
 
+const props = defineProps({
+  compact: {
+    type: Boolean,
+    default: false
+  }
+})
+
 const store = useChatAssistantStore()
-const collapsed = ref(false)
+const collapsed = ref(props.compact)
+
+watch(() => props.compact, (compact) => {
+  collapsed.value = compact
+})
 
 // 重命名相关
 const editingId = ref(null)

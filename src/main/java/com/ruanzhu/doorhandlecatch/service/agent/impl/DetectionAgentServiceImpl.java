@@ -9,9 +9,12 @@ import com.ruanzhu.doorhandlecatch.dto.chat.AgentExecutionResult;
 import com.ruanzhu.doorhandlecatch.dto.detection.CreateDetectionTaskRequest;
 import com.ruanzhu.doorhandlecatch.dto.detection.CreateDetectionTaskResponse;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionCaptureInfo;
+import com.ruanzhu.doorhandlecatch.dto.detection.DetectionDispositionRequest;
+import com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskProgressResponse;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadFileRequest;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
+import com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.DeepSeekClient;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
@@ -22,6 +25,8 @@ import com.ruanzhu.doorhandlecatch.service.agent.DetectionAgentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -51,6 +56,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
     private final OssStorageService ossStorageService;
     private final DetectionUploadAsyncService uploadAsyncService;
     private final DetectionTaskDispatchService detectionTaskDispatchService;
+    private final DetectionTaskAccessPolicy detectionTaskAccessPolicy;
     private final ObjectMapper objectMapper;
     private final ChatAssistantProperties chatAssistantProperties;
 
@@ -72,6 +78,11 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
     @Override
     public String previewAction(String userPrompt) {
+        QualityDispositionAction qualityAction = detectQualityDispositionAction(userPrompt);
+        if (qualityAction != null) {
+            return "确认后将把工单「" + qualityAction.targetNo() + "」关联的质检任务标记为「"
+                    + qualityAction.displayName() + "」。我会先按工单查询系统数据，再提交质检处置。";
+        }
         String folderPath = extractFolderPath(userPrompt);
         if (folderPath != null) {
             return "检测到本地文件夹路径：「" + folderPath + "」。确认后将自动扫描该文件夹中的图片文件，创建检测任务并上传到 OSS 进行检测。";
@@ -89,6 +100,11 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
     @Override
     public AgentExecutionResult executeConfirmedAction(String userPrompt, String username, String sessionId) {
+        QualityDispositionAction qualityAction = detectQualityDispositionAction(userPrompt);
+        if (qualityAction != null) {
+            return executeQualityDispositionAction(qualityAction);
+        }
+
         // 1. 尝试识别为文件夹上传
         String folderPath = extractFolderPath(userPrompt);
         if (folderPath == null) {
@@ -107,6 +123,43 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
         // 3. 没有文件夹路径 → 尝试识别为"开始检测"
         return executeStartDetectionFlow(userPrompt, sessionId);
+    }
+
+    private AgentExecutionResult executeQualityDispositionAction(QualityDispositionAction action) {
+        DetectionTask task = findTaskForQualityAction(action);
+        if (task == null) {
+            return AgentExecutionResult.builder()
+                    .messageType("TEXT")
+                    .intent("DETECTION_ACTION")
+                    .content("系统中未找到工单「" + action.targetNo() + "」关联的质检任务，未执行任何处置。\n\n来源：系统数据")
+                    .build();
+        }
+
+        DetectionDispositionRequest request = new DetectionDispositionRequest();
+        request.setDispositionAction(action.dispositionAction());
+        request.setRecheckRequired("REWORK".equals(action.dispositionAction()) || "RECHECK".equals(action.dispositionAction()));
+        request.setDispositionRemark("智能助手确认后提交：" + action.displayName());
+
+        DetectionTaskProgressResponse response = detectionTaskService.disposeTask(task.getTaskId(), request);
+        String content = "已将工单「" + defaultText(response.getWorkOrderNo()) + "」关联任务「"
+                + response.getTaskId() + "」标记为" + action.displayName() + "。\n\n"
+                + "- 当前流转状态：" + defaultText(response.getFlowStatus()) + "\n"
+                + "- 处置动作：" + defaultText(response.getDispositionAction()) + "\n"
+                + "- 系统消息：" + defaultText(response.getMessage()) + "\n\n"
+                + "来源：系统数据";
+        return AgentExecutionResult.builder()
+                .messageType("TEXT")
+                .intent("DETECTION_ACTION")
+                .content(content)
+                .build();
+    }
+
+    private DetectionTask findTaskForQualityAction(QualityDispositionAction action) {
+        List<DetectionTask> tasks = selectAccessibleList(new LambdaQueryWrapper<DetectionTask>()
+                .eq(DetectionTask::getWorkOrderNo, action.targetNo())
+                .orderByDesc(DetectionTask::getUpdatedAt)
+                .last("limit 1"));
+        return tasks == null || tasks.isEmpty() ? null : tasks.get(0);
     }
 
     /** 上传流程：扫描文件夹 → 创建任务 → 异步上传 + 自动触发检测 */
@@ -214,14 +267,14 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         DetectionTask task = null;
 
         if (taskId != null) {
-            task = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+            task = selectAccessibleOne(new LambdaQueryWrapper<DetectionTask>()
                     .eq(DetectionTask::getTaskId, taskId));
         } else if (uuid != null) {
-            task = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+            task = selectAccessibleOne(new LambdaQueryWrapper<DetectionTask>()
                     .eq(DetectionTask::getWorkflowUuid, uuid));
         } else {
             // 没有指定具体任务 → 查找最近一个已上传但未检测的任务
-            task = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+            task = selectAccessibleOne(new LambdaQueryWrapper<DetectionTask>()
                     .eq(DetectionTask::getStatus, "UPLOADED")
                     .orderByDesc(DetectionTask::getCreatedAt)
                     .last("limit 1"));
@@ -340,7 +393,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         if (foundTask == null) {
             String taskId = extractTaskId(userPrompt);
             if (taskId != null) {
-                foundTask = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+                foundTask = selectAccessibleOne(new LambdaQueryWrapper<DetectionTask>()
                         .eq(DetectionTask::getTaskId, taskId));
             }
         }
@@ -377,7 +430,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
         // 4. 回退到最近一条任务
         if (foundTask == null) {
-            foundTask = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+            foundTask = selectAccessibleOne(new LambdaQueryWrapper<DetectionTask>()
                     .orderByDesc(DetectionTask::getCreatedAt)
                     .last("limit 1"));
         }
@@ -436,7 +489,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
             wrapper.like(DetectionTask::getCaptureDate, month);
         }
 
-        return detectionTaskMapper.selectList(wrapper);
+        return selectAccessibleList(wrapper);
     }
 
     /** 构建设备维度多任务数据上下文 */
@@ -548,7 +601,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
             wrapper.like(DetectionTask::getCaptureDate, month);
         }
 
-        return detectionTaskMapper.selectList(wrapper);
+        return selectAccessibleList(wrapper);
     }
 
     /** 从用户输入中提取地区关键词（必须带市/省/区/县后缀） */
@@ -723,7 +776,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         String deviceName = extractDeviceName(userPrompt);
         // 其次从该采集人的历史任务中查找最近使用的设备
         if (deviceName == null && StringUtils.hasText(info.getCollector()) && !"unknown-collector".equals(info.getCollector())) {
-            DetectionTask recentTask = detectionTaskMapper.selectOne(
+            DetectionTask recentTask = selectAccessibleOne(
                     new LambdaQueryWrapper<DetectionTask>()
                             .eq(DetectionTask::getCollector, info.getCollector())
                             .isNotNull(DetectionTask::getDeviceName)
@@ -922,7 +975,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         if (matcher.find()) {
             String uuid = matcher.group();
             log.info("DetectionAgent: 从用户输入中提取到 workflowUuid = {}", uuid);
-            return detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+            return selectAccessibleOne(new LambdaQueryWrapper<DetectionTask>()
                     .eq(DetectionTask::getWorkflowUuid, uuid));
         }
         return null;
@@ -1130,7 +1183,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
     }
 
     private List<DetectionTask> queryQualityWorkflowTasks() {
-        return detectionTaskMapper.selectList(new LambdaQueryWrapper<DetectionTask>()
+        return selectAccessibleList(new LambdaQueryWrapper<DetectionTask>()
                 .and(wrapper -> wrapper
                         .in(DetectionTask::getStatus, List.of("COMPLETED", "PARTIAL_FAILED", "FAILED"))
                         .or()
@@ -1142,6 +1195,41 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
                         .eq(DetectionTask::getDispositionStatus, "PENDING"))
                 .orderByDesc(DetectionTask::getUpdatedAt)
                 .last("limit 20"));
+    }
+
+    private DetectionTask selectAccessibleOne(LambdaQueryWrapper<DetectionTask> wrapper) {
+        applyOwnerFilter(wrapper);
+        DetectionTask task = detectionTaskMapper.selectOne(wrapper);
+        if (task != null) {
+            detectionTaskAccessPolicy.assertCanAccess(task, currentAuthentication());
+        }
+        return task;
+    }
+
+    private List<DetectionTask> selectAccessibleList(LambdaQueryWrapper<DetectionTask> wrapper) {
+        applyOwnerFilter(wrapper);
+        List<DetectionTask> tasks = detectionTaskMapper.selectList(wrapper);
+        if (tasks != null) {
+            Authentication authentication = currentAuthentication();
+            tasks.forEach(task -> detectionTaskAccessPolicy.assertCanAccess(task, authentication));
+        }
+        return tasks;
+    }
+
+    private void applyOwnerFilter(LambdaQueryWrapper<DetectionTask> wrapper) {
+        Authentication authentication = currentAuthentication();
+        if (detectionTaskAccessPolicy.isAdmin(authentication)) {
+            return;
+        }
+        if (authentication == null || !StringUtils.hasText(authentication.getName())) {
+            wrapper.apply("1 = 0");
+            return;
+        }
+        wrapper.eq(DetectionTask::getCreatedBy, authentication.getName());
+    }
+
+    private Authentication currentAuthentication() {
+        return SecurityContextHolder.getContext().getAuthentication();
     }
 
     private String buildQualityWorkflowContext(List<DetectionTask> tasks) {
@@ -1189,6 +1277,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("type", "batch-trace");
         payload.put("title", "批次追溯报告");
         payload.put("description", "已汇总该批次的任务、缺陷、质检闭环、设备模型和时间链路。");
+        payload.put("sources", traceSources());
         payload.put("batchNo", report.getOrDefault("batchNo", batchNo));
         payload.put("route", "#/detection?tab=batch-trace&batchNo=" + encodeUrl(String.valueOf(report.getOrDefault("batchNo", batchNo))));
         payload.put("metrics", List.of(
@@ -1228,6 +1317,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("type", "work-order-trace");
         payload.put("title", "工单追溯报告");
         payload.put("description", "已汇总该工单覆盖的批次、设备、缺陷检测和质检流转闭环。");
+        payload.put("sources", traceSources());
         payload.put("workOrderNo", report.getOrDefault("workOrderNo", workOrderNo));
         payload.put("route", "#/detection?tab=work-order-trace&workOrderNo="
                 + encodeUrl(String.valueOf(report.getOrDefault("workOrderNo", workOrderNo))));
@@ -1295,6 +1385,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("description", safeTasks.isEmpty()
                 ? "当前没有待处理的质检闭环任务。"
                 : "已汇总待复核、处置、返工、复检和失败任务，建议优先处理高严重等级与失败项。");
+        payload.put("sources", List.of(source("系统数据", "检测任务、质检复核、处置流转")));
         payload.put("route", "#/detection?tab=quality");
         payload.put("metrics", List.of(
                 Map.of("label", "待复核", "value", pendingReview, "tone", "blue"),
@@ -1346,6 +1437,10 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         payload.put("type", "defect-gallery");
         payload.put("title", "缺陷证据库");
         payload.put("description", "已按缺陷类型、严重等级、设备和批次筛选证据链，便于快速定位复核。");
+        payload.put("sources", List.of(
+                source("模型结果", "缺陷类型、置信度、严重等级和证据图"),
+                source("系统数据", "关联任务、批次、工单和设备")
+        ));
         payload.put("route", buildDefectGalleryRoute(criteria));
         payload.put("filters", Map.of(
                 "defectType", filterText(criteria.defectType()),
@@ -1402,6 +1497,47 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
     }
 
     private record DefectGalleryCriteria(String defectType, String severityLevel, String deviceName, String batchNo) {
+    }
+
+    private record QualityDispositionAction(String targetNo, String dispositionAction, String displayName) {
+    }
+
+    private QualityDispositionAction detectQualityDispositionAction(String userPrompt) {
+        if (!StringUtils.hasText(userPrompt)) {
+            return null;
+        }
+        String workOrderNo = extractWorkOrderNo(userPrompt);
+        if (!StringUtils.hasText(workOrderNo)) {
+            return null;
+        }
+        String text = userPrompt.toLowerCase(Locale.ROOT);
+        if (text.contains("返工") || text.contains("rework")) {
+            return new QualityDispositionAction(workOrderNo, "REWORK", "返工");
+        }
+        if (text.contains("放行") || text.contains("release")) {
+            return new QualityDispositionAction(workOrderNo, "RELEASE", "放行");
+        }
+        if (text.contains("复检") || text.contains("recheck")) {
+            return new QualityDispositionAction(workOrderNo, "RECHECK", "复检");
+        }
+        if (text.contains("报废") || text.contains("scrap")) {
+            return new QualityDispositionAction(workOrderNo, "SCRAP", "报废");
+        }
+        if (text.contains("挂起") || text.contains("hold")) {
+            return new QualityDispositionAction(workOrderNo, "HOLD", "挂起");
+        }
+        return null;
+    }
+
+    private List<Map<String, String>> traceSources() {
+        return List.of(
+                source("系统数据", "检测任务、批次、工单、设备和质检流转"),
+                source("模型结果", "缺陷数量、缺陷类型、置信度和严重等级")
+        );
+    }
+
+    private Map<String, String> source(String type, String detail) {
+        return Map.of("type", type, "detail", detail);
     }
 
     private boolean isSevere(String severity) {

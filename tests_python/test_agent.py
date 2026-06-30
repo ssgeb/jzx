@@ -18,6 +18,7 @@ from datetime import datetime
 
 BASE_URL = "http://localhost:8080"
 API = f"{BASE_URL}/api/chat-assistant"
+HTTP_SESSION = requests.Session()
 
 # 测试结果统计
 results = {"passed": 0, "failed": 0, "errors": []}
@@ -41,58 +42,48 @@ def log(msg, level="INFO"):
 
 
 def login(username="admin", password="admin123"):
-    """登录获取 token"""
-    r = requests.post(f"{BASE_URL}/api/auth/login", json={
+    """登录并让 Session 保存后端返回的 HttpOnly Cookie。"""
+    r = HTTP_SESSION.post(f"{BASE_URL}/api/auth/login", json={
         "username": username,
         "password": password
     })
     if r.status_code == 200:
         data = r.json()
-        token = data.get("data", {}).get("token") or data.get("token")
-        if token:
-            return token
-    # 尝试其他字段
-    data = r.json()
-    for key in ["accessToken", "access_token", "jwt", "token"]:
-        if key in data.get("data", {}):
-            return data["data"][key]
+        if data.get("code") == 200:
+            return True
     log(f"登录失败: {r.status_code} {r.text}", "ERROR")
-    return None
+    return False
 
 
-def send_message(token, content, session_id=None):
+def send_message(_authenticated, content, session_id=None):
     """发送消息到智能体"""
-    headers = {"Authorization": f"Bearer {token}"}
     body = {"content": content}
     if session_id:
         body["sessionId"] = session_id
-    r = requests.post(f"{API}/messages", json=body, headers=headers)
+    r = HTTP_SESSION.post(f"{API}/messages", json=body)
     return r.json()
 
 
-def confirm_action(token, session_id, action_id, confirmed=True):
+def confirm_action(_authenticated, session_id, action_id, confirmed=True):
     """确认/取消操作"""
-    headers = {"Authorization": f"Bearer {token}"}
     body = {
         "sessionId": session_id,
         "actionId": action_id,
         "confirmed": confirmed
     }
-    r = requests.post(f"{API}/confirm", json=body, headers=headers)
+    r = HTTP_SESSION.post(f"{API}/confirm", json=body)
     return r.json()
 
 
-def get_session(token):
+def get_session(_authenticated):
     """获取当前会话"""
-    headers = {"Authorization": f"Bearer {token}"}
-    r = requests.get(f"{API}/session", headers=headers)
+    r = HTTP_SESSION.get(f"{API}/session")
     return r.json()
 
 
-def create_session(token):
+def create_session(_authenticated):
     """创建新会话"""
-    headers = {"Authorization": f"Bearer {token}"}
-    r = requests.post(f"{API}/sessions", headers=headers)
+    r = HTTP_SESSION.post(f"{API}/sessions")
     data = r.json()
     return data.get("data", {}).get("sessionId")
 
@@ -410,29 +401,29 @@ def main():
 
     # 1. 登录
     log("正在登录...")
-    token = login()
-    if not token:
+    authenticated = login()
+    if not authenticated:
         log("登录失败，无法继续测试", "FATAL")
         sys.exit(1)
-    log(f"登录成功，token: {token[:20]}...")
+    log("登录成功，HttpOnly Cookie 已写入测试 Session")
 
     # 2. 获取会话
-    session_resp = get_session(token)
+    session_resp = get_session(authenticated)
     log(f"会话信息: {json.dumps(session_resp, ensure_ascii=False)[:100]}")
 
     # 3. 执行测试
-    test_01_basic_intent_routing(token)
-    test_02_detection_query(token)
-    test_03_resource_query(token)
-    test_04_report_query(token)
-    test_05_ops_query(token)
-    test_06_slot_filling(token)
-    test_07_error_handling(token)
-    test_08_anti_hallucination(token)
-    test_09_multi_turn_context(token)
-    test_10_action_confirmation(token)
-    test_11_chitchat(token)
-    test_12_response_quality(token)
+    test_01_basic_intent_routing(authenticated)
+    test_02_detection_query(authenticated)
+    test_03_resource_query(authenticated)
+    test_04_report_query(authenticated)
+    test_05_ops_query(authenticated)
+    test_06_slot_filling(authenticated)
+    test_07_error_handling(authenticated)
+    test_08_anti_hallucination(authenticated)
+    test_09_multi_turn_context(authenticated)
+    test_10_action_confirmation(authenticated)
+    test_11_chitchat(authenticated)
+    test_12_response_quality(authenticated)
 
     # 4. 汇总
     log("=" * 60)

@@ -5,17 +5,21 @@ import { ElMessage } from 'element-plus'
 import router from '../router'
 
 export const useUserStore = defineStore('user', () => {
-  const token = ref(localStorage.getItem('token') || '')
   const username = ref(localStorage.getItem('username') || '')
-  const isAuthenticated = ref(!!localStorage.getItem('token'))
+  const isAuthenticated = ref(false)
+  const hasCheckedAuth = ref(false)
+  let redirectingToLogin = false
 
-  // 初始化时设置axios请求头
+  const clearSession = () => {
+    username.value = ''
+    isAuthenticated.value = false
+    hasCheckedAuth.value = true
+    localStorage.removeItem('username')
+  }
+
+  // Cookie-only 登录态由后端 HttpOnly Cookie 保存，前端只维护显示状态。
   const initializeAuthHeader = () => {
-    const savedToken = localStorage.getItem('token')
-    if (savedToken) {
-      request.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`
-      isAuthenticated.value = true
-    }
+    isAuthenticated.value = false
   }
 
   // 添加axios响应拦截器处理认证错误
@@ -23,11 +27,17 @@ export const useUserStore = defineStore('user', () => {
     response => response,
     error => {
       console.error('请求错误:', error.response?.status, error.message)
-      if (error.response && [401, 403].includes(error.response.status)) {
-        // 如果收到认证/授权错误，清除令牌并提示用户
-        ElMessage.warning('登录已过期或无权限访问，请重新登录')
-        logout()
-        router.push('/login')
+      const requestUrl = error.config?.url || ''
+      const isAuthEndpoint = ['/api/auth/login', '/api/auth/logout', '/api/auth/check'].includes(requestUrl)
+      if (error.response?.status === 401 && !isAuthEndpoint) {
+        clearSession()
+        if (!redirectingToLogin && router.currentRoute.value.name !== 'login') {
+          redirectingToLogin = true
+          ElMessage.warning('登录已过期，请重新登录')
+          router.push('/login').finally(() => {
+            redirectingToLogin = false
+          })
+        }
       }
       return Promise.reject(error)
     }
@@ -38,7 +48,6 @@ export const useUserStore = defineStore('user', () => {
 
   const login = async (loginForm) => {
     try {
-      console.log('发送登录请求...')
       const response = await request.post('/api/auth/login', loginForm)
       
       if (!response.data || response.data.code !== 200) {
@@ -46,26 +55,20 @@ export const useUserStore = defineStore('user', () => {
       }
       
       const responseData = response.data.data
-      if (!responseData || !responseData.token) {
-        throw new Error('登录失败，未获取到有效的令牌')
+      if (!responseData || !responseData.username) {
+        throw new Error('登录失败，未获取到有效的用户信息')
       }
       
-      const newToken = responseData.token
       const newUsername = responseData.username || loginForm.username
       
-      token.value = newToken
       username.value = newUsername
       isAuthenticated.value = true
+      hasCheckedAuth.value = true
+      redirectingToLogin = false
       
-      localStorage.setItem('token', newToken)
       localStorage.setItem('username', newUsername)
-      
-      // 设置axios请求头
-      request.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
-      
-      console.log('登录成功，令牌已设置')
+
       return {
-        token: newToken,
         username: newUsername
       }
     } catch (error) {
@@ -87,41 +90,41 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const logout = async () => {
-    request.post('/api/auth/logout').catch(() => {})
-    token.value = ''
-    username.value = ''
-    isAuthenticated.value = false
-    localStorage.removeItem('token')
-    localStorage.removeItem('username')
-    delete request.defaults.headers.common['Authorization']
-    console.log('已登出，令牌已清除')
+    try {
+      await request.post('/api/auth/logout')
+    } catch {
+      // 本地登录态仍需清理，避免网络故障阻止用户退出。
+    } finally {
+      clearSession()
+    }
   }
 
-  // 检查令牌是否有效的方法
+  // 通过 HttpOnly Cookie 向后端确认登录态，避免前端保存可读 token。
   const checkAuth = async () => {
-    if (!token.value) {
-      isAuthenticated.value = false
-      return false
-    }
-    
     try {
-      // 可以添加一个简单的API调用来验证令牌
-      await request.get('/api/auth/check')
+      const response = await request.get('/api/auth/check')
+      const data = response.data?.data || {}
+      if (data.username) {
+        username.value = data.username
+        localStorage.setItem('username', data.username)
+      }
       isAuthenticated.value = true
+      hasCheckedAuth.value = true
       return true
     } catch (error) {
       if (error.response && error.response.status === 401) {
-        logout()
+        clearSession()
       }
       isAuthenticated.value = false
+      hasCheckedAuth.value = true
       return false
     }
   }
 
   return {
-    token,
     username,
     isAuthenticated,
+    hasCheckedAuth,
     login,
     logout,
     initializeAuthHeader,

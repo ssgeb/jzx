@@ -27,6 +27,9 @@ public class User {
     @TableField("phone")
     private String phone;
 
+    @TableField("role")
+    private String role;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 

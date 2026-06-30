@@ -111,4 +111,16 @@ class ChatSessionServiceImplTest {
         assertThat(action.getStatus()).isEqualTo("CONFIRMED");
         verify(pendingActionMapper).updateById(action);
     }
+
+    @Test
+    void transitionsOnlyFromExpectedPendingStatus() {
+        when(pendingActionMapper.transitionStatus(
+                "sess_admin_default", "action-1", "PENDING", "EXECUTING", null))
+                .thenReturn(1);
+
+        boolean claimed = chatSessionService.transitionPendingAction(
+                "sess_admin_default", "action-1", "PENDING", "EXECUTING", null);
+
+        assertThat(claimed).isTrue();
+    }
 }

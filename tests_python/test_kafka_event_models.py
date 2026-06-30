@@ -15,6 +15,7 @@ def test_created_event_parses_capture_info_and_original_keys():
         "eventType": "DETECTION_TASK_CREATED",
         "eventTime": "2026-05-20T16:10:00+08:00",
         "taskId": "det_20260520_xxx",
+        "dispatchId": "dispatch-001",
         "bucketName": "doorhandlecatch",
         "sourcePrefix": "detection/2026-05-20/上海/张三/设备A/批次A/Original/",
         "originalKeys": [
@@ -35,6 +36,7 @@ def test_created_event_parses_capture_info_and_original_keys():
     event = DetectionTaskCreatedEvent.from_dict(payload)
 
     assert event.task_id == "det_20260520_xxx"
+    assert event.dispatch_id == "dispatch-001"
     assert event.capture_info.capture_date == "2026-05-20"
     assert event.capture_info.region == "上海"
     assert event.capture_info.image_folder_name == "批次A"
@@ -127,6 +129,7 @@ def test_process_created_event_reads_originals_and_builds_finished_event():
             "eventType": "DETECTION_TASK_CREATED",
             "eventTime": "2026-05-20T16:10:00+08:00",
             "taskId": "det_20260520_xxx",
+            "dispatchId": "dispatch-process",
             "bucketName": "doorhandlecatch",
             "sourcePrefix": "detection/2026-05-20/上海/张三/设备A/批次A/Original/",
             "originalKeys": [source_key],
@@ -149,6 +152,8 @@ def test_process_created_event_reads_originals_and_builds_finished_event():
     finished = process_created_event(event, bucket, fake_detector)
 
     assert finished.status == "COMPLETED"
+    assert finished.dispatch_id == "dispatch-process"
+    assert "dispatch-process" in finished.event_id
     assert finished.total_images == 1
     assert finished.successful_images == 1
     assert finished.failed_images == 0

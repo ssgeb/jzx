@@ -35,4 +35,7 @@ public class ChatPendingAction {
 
     @TableField("confirmed_at")
     private LocalDateTime confirmedAt;
+
+    @TableField("error_message")
+    private String errorMessage;
 }

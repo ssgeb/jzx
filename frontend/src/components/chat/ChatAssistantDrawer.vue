@@ -1,7 +1,7 @@
 <template>
   <el-drawer
     :model-value="chatStore.visible"
-    :size="panelWidth + 'px'"
+    :size="drawerSize"
     append-to-body
     :with-header="false"
     direction="rtl"
@@ -11,6 +11,7 @@
     <div class="chat-panel">
       <!-- 拖拽手柄 -->
       <div
+        v-if="!isMobile"
         class="resize-handle"
         @mousedown.prevent="startResize"
         @touchstart.prevent="startResizeTouch"
@@ -26,7 +27,7 @@
       </div>
       <!-- 侧边栏 + 主区域 -->
       <div class="chat-layout">
-        <ChatSidebar />
+        <ChatSidebar :compact="isMobile" />
         <div class="chat-main" @click="closeSidebarMenu">
           <!-- 头部 -->
           <header class="chat-header">
@@ -73,6 +74,7 @@
             <ChatMessageList
               :messages="chatStore.messages"
               :loading="chatStore.loading"
+              :confirming-action-ids="chatStore.confirmingActionIds"
               @confirm="handleConfirm"
               @send="handleSend"
             />
@@ -184,20 +186,30 @@ const closeSidebarMenu = () => {
 // ─── 面板宽度拖拽调整 ───
 const STORAGE_KEY = 'chat_panel_width'
 const MIN_WIDTH = 360
-const MAX_WIDTH = Math.min(1200, Math.floor(window.innerWidth * 0.75))
 const DEFAULT_WIDTH = 440
+const MOBILE_BREAKPOINT = 768
 
+const viewportWidth = ref(window.innerWidth)
 const panelWidth = ref(DEFAULT_WIDTH)
 let resizing = false
+
+const isMobile = computed(() => viewportWidth.value <= MOBILE_BREAKPOINT)
+const maxPanelWidth = computed(() => Math.min(1200, Math.floor(viewportWidth.value * 0.75)))
+const clampPanelWidth = (width) => Math.min(
+  maxPanelWidth.value,
+  Math.max(MIN_WIDTH, width)
+)
+const drawerSize = computed(() => {
+  const width = isMobile.value ? viewportWidth.value : clampPanelWidth(panelWidth.value)
+  return `${width}px`
+})
 
 const loadPanelWidth = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       const val = parseInt(saved, 10)
-      if (val >= MIN_WIDTH && val <= MAX_WIDTH) {
-        panelWidth.value = val
-      }
+      if (Number.isFinite(val)) panelWidth.value = clampPanelWidth(val)
     }
   } catch { /* ignore */ }
 }
@@ -225,7 +237,7 @@ const startResizeTouch = (e) => {
 const onMouseMove = (e) => {
   if (!resizing) return
   const newWidth = window.innerWidth - e.clientX
-  panelWidth.value = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, newWidth))
+  panelWidth.value = clampPanelWidth(newWidth)
 }
 
 const onMouseUp = () => {
@@ -242,7 +254,7 @@ const onTouchMove = (e) => {
   e.preventDefault()
   const touch = e.touches[0]
   const newWidth = window.innerWidth - touch.clientX
-  panelWidth.value = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, newWidth))
+  panelWidth.value = clampPanelWidth(newWidth)
 }
 
 const onTouchEnd = () => {
@@ -252,8 +264,20 @@ const onTouchEnd = () => {
   savePanelWidth()
 }
 
-onMounted(() => loadPanelWidth())
+const handleViewportResize = () => {
+  viewportWidth.value = window.innerWidth
+  if (!isMobile.value) {
+    panelWidth.value = clampPanelWidth(panelWidth.value)
+    savePanelWidth()
+  }
+}
+
+onMounted(() => {
+  loadPanelWidth()
+  window.addEventListener('resize', handleViewportResize)
+})
 onUnmounted(() => {
+  window.removeEventListener('resize', handleViewportResize)
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
   document.removeEventListener('touchmove', onTouchMove)

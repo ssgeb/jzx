@@ -1,5 +1,6 @@
 package com.ruanzhu.doorhandlecatch.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruanzhu.doorhandlecatch.common.BusinessException;
 import com.ruanzhu.doorhandlecatch.dto.ImageDetectionResponse;
@@ -8,6 +9,7 @@ import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.entity.ModelInfo;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ModelInfoMapper;
+import com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy;
 import com.ruanzhu.doorhandlecatch.service.ImageDetectionService;
 import com.ruanzhu.doorhandlecatch.service.ImageInferenceService;
 import com.ruanzhu.doorhandlecatch.service.ModelService;
@@ -15,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -45,6 +49,7 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
     private final ModelService modelService;
     private final ImageInferenceService imageInferenceService;
     private final ImageDetectionAsyncService imageDetectionAsyncService;
+    private final DetectionTaskAccessPolicy detectionTaskAccessPolicy;
 
     @Value("${detection.upload-dir:${user.dir}/uploads/images}")
     private String imageUploadDir;
@@ -87,9 +92,9 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
 
         ModelInfo modelInfo = resolveModelInfo(modelId);
         String folderName = "detect_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        Path imageFolderPath = Paths.get(imageUploadDir, folderName);
-        Path resultFolderPath = Paths.get(resultDir, folderName);
-        Path annotatedFolderPath = Paths.get(annotatedDir, folderName);
+        Path imageFolderPath = Paths.get(imageUploadDir, folderName).toAbsolutePath().normalize();
+        Path resultFolderPath = Paths.get(resultDir, folderName).toAbsolutePath().normalize();
+        Path annotatedFolderPath = Paths.get(annotatedDir, folderName).toAbsolutePath().normalize();
 
         try {
             Files.createDirectories(imageFolderPath);
@@ -118,6 +123,7 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
                 ? resultFolderPath.toString()
                 : resultFolderPath.resolve("result.json").toString());
         task.setThreshold(BigDecimal.valueOf(confidenceThreshold == null ? 0.5f : confidenceThreshold));
+        task.setCreatedBy(currentUsername());
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         detectionTaskMapper.insert(task);
@@ -144,12 +150,27 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
 
     @Override
     public List<DetectionTask> getAllDetectionData() {
-        return detectionTaskMapper.selectList(null);
+        LambdaQueryWrapper<DetectionTask> wrapper = new LambdaQueryWrapper<>();
+        Authentication authentication = currentAuthentication();
+        if (!detectionTaskAccessPolicy.isAdmin(authentication)) {
+            if (authentication == null || authentication.getName() == null) {
+                wrapper.apply("1 = 0");
+            } else {
+                wrapper.eq(DetectionTask::getCreatedBy, authentication.getName());
+            }
+        }
+        List<DetectionTask> tasks = detectionTaskMapper.selectList(wrapper);
+        tasks.forEach(task -> detectionTaskAccessPolicy.assertCanAccess(task, authentication));
+        return tasks;
     }
 
     @Override
     public DetectionTask getDetectionDataById(Long id) {
-        return detectionTaskMapper.selectById(id);
+        DetectionTask task = detectionTaskMapper.selectById(id);
+        if (task != null) {
+            detectionTaskAccessPolicy.assertCanAccess(task, currentAuthentication());
+        }
+        return task;
     }
 
     @Override
@@ -158,6 +179,7 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
         if (task == null) {
             throw new BusinessException("检测数据不存在");
         }
+        detectionTaskAccessPolicy.assertCanAccess(task, currentAuthentication());
         if (task.getSourceOssPrefix() != null) {
             deleteRecursively(Paths.get(task.getSourceOssPrefix()));
         }
@@ -187,8 +209,8 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
         try {
             ModelInfo modelInfo = resolveModelInfo(modelId);
             String folderName = "detect_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            Path uploadPath = Paths.get(uploadDir, folderName);
-            Path annotatedPath = Paths.get(annotatedDir, folderName);
+            Path uploadPath = Paths.get(uploadDir, folderName).toAbsolutePath().normalize();
+            Path annotatedPath = Paths.get(annotatedDir, folderName).toAbsolutePath().normalize();
             Files.createDirectories(uploadPath);
             Files.createDirectories(annotatedPath);
 
@@ -235,6 +257,7 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
             task.setSourceOssPrefix(uploadPath.toString());
             task.setResultOssPrefix(annotatedPath.toString());
             task.setThreshold(BigDecimal.valueOf(0.5f));
+            task.setCreatedBy(currentUsername());
             task.setStatisticsJson(objectMapper.writeValueAsString(statistics));
             task.setCreatedAt(LocalDateTime.now());
             task.setFinishedAt(LocalDateTime.now());
@@ -261,6 +284,15 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
     private String buildTaskId() {
         return "det_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
                 + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+    }
+
+    private Authentication currentAuthentication() {
+        return SecurityContextHolder.getContext().getAuthentication();
+    }
+
+    private String currentUsername() {
+        Authentication authentication = currentAuthentication();
+        return authentication == null ? null : authentication.getName();
     }
 
     private List<Path> saveBatchImages(List<MultipartFile> files, Path imageFolderPath) {

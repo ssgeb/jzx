@@ -461,7 +461,36 @@ git add kafka_event_models.py kafka_settings.py kafka_detection_worker.py .env.e
 git commit -m "fix: acknowledge Kafka finished delivery"
 ```
 
-### Task 6: Run regression and runtime verification
+### Task 6: Keep the agent smoke test compatible with cookie-only auth
+
+**Files:**
+- Modify: `tests_python/test_agent.py`
+- Modify: `tests_python/run_test.bat`
+- Create: `tests_python/test_agent_auth_client.py`
+
+- [ ] **Step 1: Write failing client-auth tests**
+
+Create tests around a reusable `requests.Session` proving that login succeeds from the HttpOnly cookie even when the JSON body contains no token, and that subsequent requests do not require an `Authorization` header.
+
+- [ ] **Step 2: Run the tests and verify RED**
+
+Run: `conda run --no-capture-output -n leetcode python -m pytest tests_python/test_agent_auth_client.py -q`
+
+Expected: import or assertion failure because the smoke test still requires a response token.
+
+- [ ] **Step 3: Move the smoke test to a cookie-backed session**
+
+Use one module-level `requests.Session`, make `login()` return a boolean, and remove Bearer-header construction from all helper requests. Keep the script's existing standalone `main()` flow.
+
+Change `run_test.bat` to execute `python -m pytest` for unit tests and keep the live smoke test opt-in through `RUN_LIVE_AGENT_TESTS=1`, so the default test command does not require a running backend.
+
+- [ ] **Step 4: Run focused tests and verify GREEN**
+
+Run: `conda run --no-capture-output -n leetcode python -m pytest tests_python/test_agent_auth_client.py -q`
+
+Expected: all focused tests pass.
+
+### Task 7: Run regression and runtime verification
 
 **Files:**
 - Modify only files required by a demonstrated regression.
@@ -514,4 +543,3 @@ Restart Spring Boot, then verify:
 Run: `git diff --check`
 
 Expected: no whitespace errors. Existing CRLF conversion warnings may remain informational.
-

@@ -3,23 +3,32 @@ package com.ruanzhu.doorhandlecatch.service.agent.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruanzhu.doorhandlecatch.common.BusinessException;
 import com.ruanzhu.doorhandlecatch.config.properties.ChatAssistantProperties;
 import com.ruanzhu.doorhandlecatch.dto.chat.AgentExecutionResult;
+import com.ruanzhu.doorhandlecatch.dto.detection.DetectionDispositionRequest;
+import com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskProgressResponse;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadFileRequest;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
+import com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.DeepSeekClient;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskService;
 import com.ruanzhu.doorhandlecatch.service.DetectionUploadAsyncService;
 import com.ruanzhu.doorhandlecatch.service.OssStorageService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,7 +38,10 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class DetectionAgentServiceImplTest {
@@ -57,6 +69,20 @@ class DetectionAgentServiceImplTest {
 
     @TempDir
     private Path tempDir;
+
+    @BeforeEach
+    void authenticateAsAdmin() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "admin",
+                        "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void scanImageFilesKeepsRelativePathForNestedFolders() throws Exception {
@@ -113,6 +139,7 @@ class DetectionAgentServiceImplTest {
         assertThat(result.getIntent()).isEqualTo("DETECTION_QUERY");
         JsonNode payload = new ObjectMapper().readTree(result.getContent());
         assertThat(payload.path("type").asText()).isEqualTo("quality-queue");
+        assertThat(payload.path("sources").get(0).path("type").asText()).isEqualTo("系统数据");
         assertThat(payload.path("metrics").get(0).path("label").asText()).isEqualTo("待复核");
         assertThat(payload.path("metrics").get(0).path("value").asInt()).isEqualTo(1);
         assertThat(payload.path("tasks").get(0).path("taskId").asText()).isEqualTo("det_20260611_151200_abcd1234");
@@ -132,6 +159,7 @@ class DetectionAgentServiceImplTest {
                 ossStorageService,
                 uploadAsyncService,
                 detectionTaskDispatchService,
+                new DetectionTaskAccessPolicy(),
                 new ObjectMapper(),
                 properties
         );
@@ -183,6 +211,7 @@ class DetectionAgentServiceImplTest {
                 ossStorageService,
                 uploadAsyncService,
                 detectionTaskDispatchService,
+                new DetectionTaskAccessPolicy(),
                 new ObjectMapper(),
                 new ChatAssistantProperties()
         );
@@ -193,6 +222,8 @@ class DetectionAgentServiceImplTest {
         assertThat(result.getIntent()).isEqualTo("DETECTION_QUERY");
         JsonNode payload = new ObjectMapper().readTree(result.getContent());
         assertThat(payload.path("type").asText()).isEqualTo("batch-trace");
+        assertThat(payload.path("sources").get(0).path("type").asText()).isEqualTo("系统数据");
+        assertThat(payload.path("sources").get(1).path("type").asText()).isEqualTo("模型结果");
         assertThat(payload.path("batchNo").asText()).isEqualTo(batchNo);
         assertThat(payload.path("route").asText()).contains("tab=batch-trace");
         assertThat(payload.path("metrics").get(0).path("label").asText()).isEqualTo("任务数");
@@ -246,6 +277,7 @@ class DetectionAgentServiceImplTest {
                 ossStorageService,
                 uploadAsyncService,
                 detectionTaskDispatchService,
+                new DetectionTaskAccessPolicy(),
                 new ObjectMapper(),
                 new ChatAssistantProperties()
         );
@@ -255,6 +287,7 @@ class DetectionAgentServiceImplTest {
         assertThat(result.getMessageType()).isEqualTo("BUSINESS_CARD");
         JsonNode payload = new ObjectMapper().readTree(result.getContent());
         assertThat(payload.path("type").asText()).isEqualTo("work-order-trace");
+        assertThat(payload.path("sources").get(0).path("type").asText()).isEqualTo("系统数据");
         assertThat(payload.path("workOrderNo").asText()).isEqualTo(workOrderNo);
         assertThat(payload.path("route").asText()).contains("tab=work-order-trace");
         assertThat(payload.path("route").asText()).contains("workOrderNo=WO-20260611-001");
@@ -296,6 +329,7 @@ class DetectionAgentServiceImplTest {
                 ossStorageService,
                 uploadAsyncService,
                 detectionTaskDispatchService,
+                new DetectionTaskAccessPolicy(),
                 new ObjectMapper(),
                 new ChatAssistantProperties()
         );
@@ -306,10 +340,99 @@ class DetectionAgentServiceImplTest {
         assertThat(result.getIntent()).isEqualTo("DETECTION_QUERY");
         JsonNode payload = new ObjectMapper().readTree(result.getContent());
         assertThat(payload.path("type").asText()).isEqualTo("defect-gallery");
+        assertThat(payload.path("sources").get(0).path("type").asText()).isEqualTo("模型结果");
         assertThat(payload.path("route").asText()).contains("tab=defect-gallery");
         assertThat(payload.path("route").asText()).contains("batchNo=BATCH-001");
         assertThat(payload.path("route").asText()).contains("severityLevel=CRITICAL");
         assertThat(payload.path("metrics").get(0).path("label").asText()).isEqualTo("证据任务");
         assertThat(payload.path("records").get(0).path("primaryDefectType").asText()).isEqualTo("划痕");
+    }
+
+    @Test
+    void previewActionExplainsWorkOrderReworkRequiresConfirmation() {
+        DetectionAgentServiceImpl service = newService();
+
+        String preview = service.previewAction("将工单 WO-20260611-001 标记为返工");
+
+        assertThat(preview).contains("工单", "WO-20260611-001", "返工", "确认");
+    }
+
+    @Test
+    void executeConfirmedActionDisposesWorkOrderAsRework() {
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_20260611_151200_abcd1234");
+        task.setWorkOrderNo("WO-20260611-001");
+        task.setBatchNo("BATCH-001");
+
+        when(detectionTaskMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(task));
+        when(detectionTaskService.disposeTask(eq("det_20260611_151200_abcd1234"), any(DetectionDispositionRequest.class)))
+                .thenReturn(DetectionTaskProgressResponse.builder()
+                        .taskId("det_20260611_151200_abcd1234")
+                        .workOrderNo("WO-20260611-001")
+                        .flowStatus("REWORK_REQUIRED")
+                        .dispositionAction("REWORK")
+                        .message("质检处置已提交")
+                        .build());
+
+        DetectionAgentServiceImpl service = newService();
+
+        AgentExecutionResult result = service.executeConfirmedAction(
+                "将工单 WO-20260611-001 标记为返工",
+                "tester",
+                "sess_demo"
+        );
+
+        assertThat(result.getIntent()).isEqualTo("DETECTION_ACTION");
+        assertThat(result.getContent()).contains("已将工单", "WO-20260611-001", "返工", "来源：系统数据");
+        verify(detectionTaskService).disposeTask(eq("det_20260611_151200_abcd1234"), any(DetectionDispositionRequest.class));
+    }
+
+    @Test
+    void executeConfirmedActionRejectsForeignWorkOrderForOperator() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "alice",
+                        "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
+
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_20260611_151200_abcd1234");
+        task.setWorkOrderNo("WO-20260611-001");
+        task.setCreatedBy("bob");
+        when(detectionTaskMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(task));
+
+        DetectionAgentServiceImpl service = newService();
+
+        assertThatThrownBy(() -> service.executeConfirmedAction(
+                "将工单 WO-20260611-001 标记为返工",
+                "alice",
+                "sess_demo"
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo(403);
+        verify(detectionTaskService, never()).disposeTask(any(), any());
+    }
+
+    @Test
+    void answerRejectsForeignTaskForOperator() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "alice",
+                        "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
+
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_20260611_151200_abcd1234");
+        task.setCreatedBy("bob");
+        when(detectionTaskMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(task);
+
+        DetectionAgentServiceImpl service = newService();
+
+        assertThatThrownBy(() -> service.answer(
+                "查询任务 det_20260611_151200_abcd1234",
+                "alice"
+        )).isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo(403);
     }
 }

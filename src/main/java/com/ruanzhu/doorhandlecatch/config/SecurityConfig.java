@@ -63,7 +63,7 @@ public class SecurityConfig implements WebMvcConfigurer {
                         .requestMatchers("/api/detection/upload", "/api/detection/upload-and-detect").authenticated()
                         .requestMatchers("/api/detection/tasks/**").authenticated()
                         .requestMatchers("/api/chat-assistant/**").authenticated()
-                        .requestMatchers("/api/oss/preview").permitAll()
+                        .requestMatchers("/api/oss/preview").authenticated()
                         .requestMatchers("/static/**").permitAll()
                         .requestMatchers("/*.html", "/*.js", "/*.css", "/*.ico", "/assets/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()

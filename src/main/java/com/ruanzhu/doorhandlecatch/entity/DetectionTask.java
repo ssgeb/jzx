@@ -55,6 +55,12 @@ public class DetectionTask {
     @TableField("stage")
     private String stage;
 
+    @TableField("dispatch_id")
+    private String dispatchId;
+
+    @TableField("last_finished_event_id")
+    private String lastFinishedEventId;
+
     @TableField("model_id")
     private Integer modelId;
 

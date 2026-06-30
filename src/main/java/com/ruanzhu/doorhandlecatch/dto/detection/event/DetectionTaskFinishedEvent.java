@@ -17,6 +17,7 @@ public class DetectionTaskFinishedEvent {
     private String eventType;
     private String eventTime;
     private String taskId;
+    private String dispatchId;
     private String status;
     private String resultOssPrefix;
     private String resultJsonKey;

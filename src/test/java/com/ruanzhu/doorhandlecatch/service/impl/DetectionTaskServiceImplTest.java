@@ -31,6 +31,7 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -75,6 +76,10 @@ class DetectionTaskServiceImplTest {
     @BeforeEach
     void setUp() {
         SecurityContextHolder.clearContext();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("admin", "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))
+        );
         ossProperties = new OssProperties();
         ossProperties.setUploadUrlExpireMinutes(15);
         ossProperties.setPreviewUrlExpireMinutes(30);
@@ -87,7 +92,8 @@ class DetectionTaskServiceImplTest {
                 ossProperties,
                 detectionTaskDispatchService,
                 Mockito.mock(ChatSessionService.class),
-                new ObjectMapper()
+                new ObjectMapper(),
+                new com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy()
         );
         ReflectionTestUtils.setField(detectionTaskService, "maxImagesPerBatch", 200);
         ReflectionTestUtils.setField(detectionTaskService, "maxImageBytes", 10L * 1024L * 1024L);
@@ -100,13 +106,14 @@ class DetectionTaskServiceImplTest {
         task.setCreatedBy("bob");
         when(detectionTaskMapper.selectOne(any())).thenReturn(task);
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("alice", "N/A")
+                new UsernamePasswordAuthenticationToken("alice", "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")))
         );
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> detectionTaskService.getTaskProgress("det_private"));
 
-        assertEquals("无权访问该检测任务", ex.getMessage());
+        assertEquals("无权访问该资源", ex.getMessage());
     }
 
     @Test
@@ -321,6 +328,39 @@ class DetectionTaskServiceImplTest {
     }
 
     @Test
+    void confirmUploadedDoesNotDispatchTaskAlreadyClaimed() {
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_uploaded");
+        task.setStatus("UPLOADED");
+        task.setDispatchId("dispatch-existing");
+        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+
+        detectionTaskService.confirmUploaded("det_uploaded", new com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskUploadedRequest());
+
+        verify(detectionTaskDispatchService, Mockito.never()).dispatchTaskAsync(any());
+    }
+
+    @Test
+    void confirmUploadedDispatchesOnlyWhenConditionalClaimSucceeds() {
+        DetectionTask task = new DetectionTask();
+        task.setId(1L);
+        task.setTaskId("det_claim");
+        task.setStatus("UPLOADING");
+        task.setSourceOssPrefix("detection/task/Original/");
+        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(detectionTaskMapper.claimUploaded(any())).thenReturn(0);
+        DetectionUploadedFileItem item = new DetectionUploadedFileItem();
+        item.setFileName("a.jpg");
+        item.setObjectKey("detection/task/Original/a.jpg");
+        var request = new com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskUploadedRequest();
+        request.setUploadedFiles(List.of(item));
+
+        detectionTaskService.confirmUploaded("det_claim", request);
+
+        verify(detectionTaskDispatchService, Mockito.never()).dispatchTaskAsync(any());
+    }
+
+    @Test
     void applyFinishedEventUsesStartedAtFromWorkerEvent() {
         DetectionTask task = new DetectionTask();
         task.setId(1L);
@@ -328,11 +368,14 @@ class DetectionTaskServiceImplTest {
         task.setStatus("QUEUED");
         task.setStage("QUEUED");
         task.setTotalImages(1);
+        task.setDispatchId("dispatch-1");
 
         when(detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_123")
+                .eventId("event-1")
+                .dispatchId("dispatch-1")
                 .status("COMPLETED")
                 .resultOssPrefix("detection/task/Result/")
                 .resultJsonKey("detection/task/Result/detection_results.json")
@@ -370,11 +413,14 @@ class DetectionTaskServiceImplTest {
         task.setDispositionOperator("qa-leader");
         task.setDisposedAt(LocalDateTime.of(2026, 6, 10, 11, 10));
         task.setTotalImages(1);
+        task.setDispatchId("dispatch-done");
 
         when(detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_done")
+                .eventId("event-done")
+                .dispatchId("dispatch-done")
                 .status("COMPLETED")
                 .resultOssPrefix("detection/task/Result/")
                 .resultJsonKey("detection/task/Result/detection_results.json")
@@ -406,6 +452,7 @@ class DetectionTaskServiceImplTest {
         task.setStatus("QUEUED");
         task.setStage("QUEUED");
         task.setTotalImages(1);
+        task.setDispatchId("dispatch-defect");
 
         java.util.Map<String, Object> bbox = new java.util.LinkedHashMap<>();
         bbox.put("x", 12);
@@ -428,6 +475,8 @@ class DetectionTaskServiceImplTest {
 
         detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_defect")
+                .eventId("event-defect")
+                .dispatchId("dispatch-defect")
                 .status("COMPLETED")
                 .resultOssPrefix("detection/task/Result/")
                 .resultJsonKey("detection/task/Result/detection_results.json")
@@ -448,6 +497,56 @@ class DetectionTaskServiceImplTest {
         assertEquals("Rusty", updatedTask.getPrimaryDefectType());
         assertTrue(updatedTask.getDefectEvidenceJson().contains("\"defectType\":\"Rusty\""));
         assertTrue(updatedTask.getDefectEvidenceJson().contains("\"positionRegion\":\"CENTER\""));
+    }
+
+    @Test
+    void ignoresFinishedEventFromStaleDispatch() {
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_stale");
+        task.setDispatchId("dispatch-current");
+        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+
+        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+                .taskId("det_stale")
+                .eventId("event-old")
+                .dispatchId("dispatch-old")
+                .status("COMPLETED")
+                .build());
+
+        verify(detectionTaskMapper, Mockito.never()).updateById(any());
+    }
+
+    @Test
+    void ignoresDuplicateFinishedEvent() {
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_duplicate");
+        task.setDispatchId("dispatch-current");
+        task.setLastFinishedEventId("event-1");
+        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+
+        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+                .taskId("det_duplicate")
+                .eventId("event-1")
+                .dispatchId("dispatch-current")
+                .status("COMPLETED")
+                .build());
+
+        verify(detectionTaskMapper, Mockito.never()).updateById(any());
+    }
+
+    @Test
+    void backgroundFailureCanUpdateTaskWithoutUserSecurityContext() {
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_background_failure");
+        task.setCreatedBy("alice");
+        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        SecurityContextHolder.clearContext();
+
+        detectionTaskService.failTask("det_background_failure", "broker unavailable");
+
+        verify(detectionTaskMapper).updateById(task);
+        assertEquals("FAILED", task.getStatus());
+        assertEquals("broker unavailable", task.getErrorMessage());
     }
 
     @Test
@@ -1043,18 +1142,19 @@ class DetectionTaskServiceImplTest {
         uploaded.setObjectKey("detection/source/img001.jpg");
 
         when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(detectionTaskMapper.claimUploaded(any())).thenReturn(1);
 
         detectionTaskService.markUploaded("det_mark_uploaded", List.of(uploaded));
 
-        ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).updateById(taskCaptor.capture());
-        DetectionTask updatedTask = taskCaptor.getValue();
+        verify(detectionTaskMapper).claimUploaded(any());
+        DetectionTask updatedTask = task;
 
         assertEquals("UPLOADED", updatedTask.getStatus());
         assertEquals("UPLOADED", updatedTask.getStage());
         assertEquals("PENDING_DETECTION", updatedTask.getFlowStatus());
         assertEquals(1, updatedTask.getTotalImages());
         assertTrue(updatedTask.getOriginalImageKeysJson().contains("detection/source/img001.jpg"));
+        assertNotNull(updatedTask.getDispatchId());
         verify(detectionTaskDispatchService).dispatchTaskAsync("det_mark_uploaded");
     }
 

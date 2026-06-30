@@ -48,6 +48,9 @@ public interface ChatSessionService {
 
     void markPendingActionStatus(String sessionId, String actionId, String status);
 
+    boolean transitionPendingAction(String sessionId, String actionId, String expectedStatus,
+                                    String targetStatus, String errorMessage);
+
     void verifySessionOwner(String username, String sessionId);
 
     void saveState(String sessionId, String stateJson);

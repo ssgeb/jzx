@@ -7,17 +7,27 @@ import com.ruanzhu.doorhandlecatch.config.properties.DetectionWorkerProperties;
 import com.ruanzhu.doorhandlecatch.config.properties.KafkaTaskProperties;
 import com.ruanzhu.doorhandlecatch.dto.chat.AgentExecutionResult;
 import com.ruanzhu.doorhandlecatch.dto.chat.AgentGraphHealthResponse;
+import com.ruanzhu.doorhandlecatch.common.BusinessException;
+import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
+import com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy;
 import com.ruanzhu.doorhandlecatch.service.AgentGraphRunMonitor;
 import com.ruanzhu.doorhandlecatch.service.ChatBusinessCatalogService;
 import com.ruanzhu.doorhandlecatch.service.ChatCapabilityService;
 import com.ruanzhu.doorhandlecatch.service.DeepSeekClient;
 import com.ruanzhu.doorhandlecatch.service.OssStorageService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -39,6 +49,40 @@ class OpsAgentServiceImplTest {
 
     @Mock
     private AgentGraphRunMonitor agentGraphRunMonitor;
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void answerRejectsForeignFailedTaskForOperator() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "alice",
+                        "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
+        DetectionTask task = new DetectionTask();
+        task.setTaskId("det_20260611_151200_abcd1234");
+        task.setCreatedBy("bob");
+        task.setStatus("FAILED");
+        when(detectionTaskMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(task);
+
+        OpsAgentServiceImpl service = new OpsAgentServiceImpl(
+                detectionTaskMapper,
+                ossStorageService,
+                new KafkaTaskProperties(),
+                new DetectionWorkerProperties(),
+                new ChatCapabilityService(),
+                new ChatBusinessCatalogService(OBJECT_MAPPER),
+                deepSeekClient,
+                agentGraphRunMonitor,
+                OBJECT_MAPPER,
+                new DetectionTaskAccessPolicy()
+        );
+
+        assertThrows(BusinessException.class, () -> service.answer("检查检测链路", "alice"));
+    }
 
     @Test
     void answerReportsKafkaAndRemoteWorkerStatus() {
@@ -65,7 +109,8 @@ class OpsAgentServiceImplTest {
                 new ChatBusinessCatalogService(OBJECT_MAPPER),
                 deepSeekClient,
                 agentGraphRunMonitor,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                new DetectionTaskAccessPolicy()
         );
 
         AgentExecutionResult result = service.answer("检查检测链路", "tester");
@@ -90,7 +135,8 @@ class OpsAgentServiceImplTest {
                 new ChatBusinessCatalogService(OBJECT_MAPPER),
                 deepSeekClient,
                 agentGraphRunMonitor,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                new DetectionTaskAccessPolicy()
         );
 
         AgentExecutionResult result = service.answer("智能助手能覆盖所有系统业务功能吗", "tester");
@@ -119,7 +165,8 @@ class OpsAgentServiceImplTest {
                 new ChatBusinessCatalogService(OBJECT_MAPPER),
                 deepSeekClient,
                 agentGraphRunMonitor,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                new DetectionTaskAccessPolicy()
         );
 
         AgentExecutionResult result = service.answer("模型管理功能在哪个页面", "tester");
@@ -143,7 +190,8 @@ class OpsAgentServiceImplTest {
                 new ChatBusinessCatalogService(OBJECT_MAPPER),
                 deepSeekClient,
                 agentGraphRunMonitor,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                new DetectionTaskAccessPolicy()
         );
 
         AgentExecutionResult result = service.answer("缺陷证据库在哪个页面", "tester");
@@ -167,7 +215,8 @@ class OpsAgentServiceImplTest {
                 new ChatBusinessCatalogService(OBJECT_MAPPER),
                 deepSeekClient,
                 agentGraphRunMonitor,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                new DetectionTaskAccessPolicy()
         );
 
         AgentExecutionResult result = service.answer("Agent健康诊断在哪个页面", "tester");
@@ -206,7 +255,8 @@ class OpsAgentServiceImplTest {
                 new ChatBusinessCatalogService(OBJECT_MAPPER),
                 deepSeekClient,
                 agentGraphRunMonitor,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                new DetectionTaskAccessPolicy()
         );
 
         AgentExecutionResult result = service.answer("查看 Agent checkpoint 和健康状态", "tester");

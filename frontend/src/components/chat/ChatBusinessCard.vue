@@ -16,6 +16,13 @@
     </div>
 
     <template v-if="isQualityQueue || isBatchTrace || isWorkOrderTrace || isDefectGallery || isAgentHealth">
+      <div v-if="sources.length" class="source-strip">
+        <span class="source-label">来源</span>
+        <span v-for="source in sources" :key="`${source.type}-${source.detail}`" class="source-chip">
+          {{ source.type }}<small v-if="source.detail">：{{ source.detail }}</small>
+        </span>
+      </div>
+
       <div class="metric-grid">
         <div
           v-for="metric in metrics"
@@ -201,6 +208,7 @@ const isDefectGallery = computed(() => payload.value.type === 'defect-gallery')
 const isAgentHealth = computed(() => payload.value.type === 'agent-health')
 const metrics = computed(() => Array.isArray(payload.value.metrics) ? payload.value.metrics : [])
 const tasks = computed(() => Array.isArray(payload.value.tasks) ? payload.value.tasks : [])
+const sources = computed(() => Array.isArray(payload.value.sources) ? payload.value.sources : [])
 const batchRecords = computed(() => Array.isArray(payload.value.records) ? payload.value.records.slice(0, 5) : [])
 const defectRecords = computed(() => Array.isArray(payload.value.records) ? payload.value.records.slice(0, 5) : [])
 const traceRouteText = computed(() => {
@@ -279,6 +287,36 @@ const evidenceCount = (value) => Array.isArray(value) ? value.length : 0
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
+}
+
+.source-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.source-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.source-chip {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.source-chip small {
+  color: #64748b;
+  font-weight: 650;
 }
 
 .metric-card {

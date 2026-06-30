@@ -54,6 +54,10 @@
             :image-size="64"
           >
             <template #default>
+              <BusinessSeedEmptyHint
+                title="暂无检测记录"
+                description="可上传图片生成检测任务；首次验收完整业务闭环时，也可启用业务预置数据。"
+              />
               <router-link to="/upload">
                 <el-button type="primary" size="small">前往上传图片</el-button>
               </router-link>
@@ -466,6 +470,9 @@ import {
   submitDetectionReworkResult
 } from '../../api/detection'
 import { useTaskStore, useUploadStore, usePollingStore, CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_ALIASES } from '../../stores/detectionTask'
+import { useSingleImageUploadPreview } from '../../composables/useSingleImageUploadPreview'
+import { businessBatchNos, businessWorkOrderNos } from '../../config/businessTracePresets'
+import BusinessSeedEmptyHint from '../../components/BusinessSeedEmptyHint.vue'
 
 const taskStore = useTaskStore()
 const uploadStore = useUploadStore()
@@ -533,17 +540,6 @@ const workOrderTraceReport = ref(null)
 const batchTraceNo = ref('')
 const batchTraceLoading = ref(false)
 const batchTraceReport = ref(null)
-
-const demoWorkOrderNos = [
-  'WO-DEMO-SH-A-001',
-  'WO-DEMO-TJ-B-001',
-  'WO-DEMO-CD-E-001'
-]
-const demoBatchNos = [
-  'BATCH-SH-A-20260615-001',
-  'BATCH-TJ-B-20260615-001',
-  'BATCH-CD-E-20260615-001'
-]
 
 const form = reactive({
   modelId: null,
@@ -886,11 +882,11 @@ const handleTabChange = async (tabName) => {
     await loadDefectGallery(1)
   }
   if (tabName === 'work-order-trace' && !workOrderTraceReport.value && !workOrderTraceLoading.value) {
-    workOrderTraceNo.value = workOrderTraceNo.value || demoWorkOrderNos[0]
+    workOrderTraceNo.value = workOrderTraceNo.value || businessWorkOrderNos[0]
     await loadWorkOrderTraceReport()
   }
   if (tabName === 'batch-trace' && !batchTraceReport.value && !batchTraceLoading.value) {
-    batchTraceNo.value = batchTraceNo.value || demoBatchNos[0]
+    batchTraceNo.value = batchTraceNo.value || businessBatchNos[0]
     await loadBatchTraceReport()
   }
   const targetPath = tabRouteMap[tabName]
@@ -999,20 +995,12 @@ const getStatType = (key) => {
 
 // ==================== 单图检测 ====================
 
-const beforeUpload = (file) => {
-  form.imageFile = file
-  fileList.value = [{ uid: `${Date.now()}`, name: file.name, status: 'done', originFileObj: file }]
-  detectionResult.value = null
-  annotatedImageUrl.value = ''
-  return false
-}
-
-const handleRemove = () => {
-  form.imageFile = null
-  fileList.value = []
-  detectionResult.value = null
-  annotatedImageUrl.value = ''
-}
+const { handleUploadChange, handleRemove } = useSingleImageUploadPreview({
+  form,
+  fileList,
+  detectionResult,
+  annotatedImageUrl
+})
 
 const handleSingleDetection = async () => {
   if (!form.imageFile) {
@@ -1473,12 +1461,12 @@ const loadBatchTraceReport = async () => {
   }
 }
 
-const useDemoWorkOrder = async (workOrderNo) => {
+const loadBusinessWorkOrderTrace = async (workOrderNo) => {
   workOrderTraceNo.value = workOrderNo
   await loadWorkOrderTraceReport()
 }
 
-const useDemoBatch = async (batchNo) => {
+const loadBusinessBatchTrace = async (batchNo) => {
   batchTraceNo.value = batchNo
   await loadBatchTraceReport()
 }

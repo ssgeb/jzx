@@ -28,6 +28,7 @@ class DetectionTaskCreatedEvent:
     event_type: str
     event_time: str
     task_id: str
+    dispatch_id: str
     bucket_name: str
     source_prefix: str
     original_keys: List[str] = field(default_factory=list)
@@ -44,6 +45,7 @@ class DetectionTaskCreatedEvent:
             event_type=str(payload.get("eventType", "")),
             event_time=str(payload.get("eventTime", "")),
             task_id=str(payload.get("taskId", "")),
+            dispatch_id=str(payload.get("dispatchId", "")),
             bucket_name=str(payload.get("bucketName", "")),
             source_prefix=str(payload.get("sourcePrefix", "")),
             original_keys=[str(item) for item in payload.get("originalKeys", [])],
@@ -59,6 +61,7 @@ class DetectionTaskFinishedEvent:
     event_type: str
     event_time: str
     task_id: str
+    dispatch_id: str
     status: str
     result_oss_prefix: str
     result_json_key: str
@@ -78,6 +81,7 @@ class DetectionTaskFinishedEvent:
             "eventType": self.event_type,
             "eventTime": self.event_time,
             "taskId": self.task_id,
+            "dispatchId": self.dispatch_id,
             "status": self.status,
             "resultOssPrefix": self.result_oss_prefix,
             "resultJsonKey": self.result_json_key,

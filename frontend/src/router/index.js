@@ -193,13 +193,21 @@ function finishProgress() {
   setTimeout(() => { bar.style.width = '0%' }, 500)
 }
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   const detectionTitle = to.path === '/detection' ? detectionTabTitles[String(to.query.tab || 'workspace')] : ''
   document.title = detectionTitle || to.meta.title || '集装箱门把手检测智能管理软件'
 
-  if (to.meta.requiresAuth && !userStore.token) {
-    next({ name: 'login', query: { redirect: to.fullPath } })
+  if (to.meta.requiresAuth && !userStore.isAuthenticated) {
+    const authenticated = userStore.hasCheckedAuth ? false : await userStore.checkAuth()
+    if (!authenticated) {
+      next({ name: 'login', query: { redirect: to.fullPath } })
+      return
+    }
+  }
+
+  if (to.name === 'login' && userStore.isAuthenticated) {
+    next({ name: 'home' })
     return
   }
 

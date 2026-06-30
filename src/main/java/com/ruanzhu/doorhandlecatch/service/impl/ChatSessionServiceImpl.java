@@ -269,6 +269,13 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     }
 
     @Override
+    public boolean transitionPendingAction(String sessionId, String actionId, String expectedStatus,
+                                           String targetStatus, String errorMessage) {
+        return chatPendingActionMapper.transitionStatus(
+                sessionId, actionId, expectedStatus, targetStatus, errorMessage) == 1;
+    }
+
+    @Override
     public void verifySessionOwner(String username, String sessionId) {
         requireOwnedSession(username, sessionId);
     }

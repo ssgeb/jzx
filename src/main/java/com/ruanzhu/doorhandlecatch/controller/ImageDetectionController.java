@@ -97,6 +97,8 @@ public class ImageDetectionController {
             List<DetectionTask> dataList = imageDetectionService.getAllDetectionData();
             log.info("成功获取到 {} 条检测记录", dataList.size());
             return Result.success(dataList);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取检测记录异常: {}", e.getMessage(), e);
             return Result.error(500, "获取检测记录失败: " + e.getMessage());
@@ -120,6 +122,8 @@ public class ImageDetectionController {
             }
             log.info("成功获取检测记录详情: ID={}", id);
             return Result.success(data);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("获取检测记录详情异常: {}", e.getMessage(), e);
             return Result.error(500, "获取检测记录详情失败: " + e.getMessage());
@@ -139,6 +143,8 @@ public class ImageDetectionController {
             imageDetectionService.deleteDetectionData(id);
             log.info("成功删除检测记录: ID={}", id);
             return Result.success();
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("删除检测记录异常: {}", e.getMessage(), e);
             return Result.error(500, "删除检测记录失败: " + e.getMessage());
@@ -181,4 +187,3 @@ public class ImageDetectionController {
     }
 
 }
- 

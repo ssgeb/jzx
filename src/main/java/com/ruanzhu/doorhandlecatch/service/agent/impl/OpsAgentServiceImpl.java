@@ -10,6 +10,7 @@ import com.ruanzhu.doorhandlecatch.dto.chat.AgentGraphHealthResponse;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
 import com.ruanzhu.doorhandlecatch.common.BusinessException;
+import com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy;
 import com.ruanzhu.doorhandlecatch.service.AgentGraphRunMonitor;
 import com.ruanzhu.doorhandlecatch.service.ChatBusinessCatalogService;
 import com.ruanzhu.doorhandlecatch.service.ChatCapabilityService;
@@ -19,6 +20,8 @@ import com.ruanzhu.doorhandlecatch.service.agent.OpsAgentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
@@ -39,6 +42,7 @@ public class OpsAgentServiceImpl implements OpsAgentService {
     private final DeepSeekClient deepSeekClient;
     private final AgentGraphRunMonitor agentGraphRunMonitor;
     private final ObjectMapper objectMapper;
+    private final DetectionTaskAccessPolicy detectionTaskAccessPolicy;
 
     @Override
     public AgentExecutionResult answer(String userPrompt, String username) {
@@ -69,10 +73,22 @@ public class OpsAgentServiceImpl implements OpsAgentService {
                     .build();
         }
 
-        DetectionTask failedTask = detectionTaskMapper.selectOne(new LambdaQueryWrapper<DetectionTask>()
+        LambdaQueryWrapper<DetectionTask> failedTaskQuery = new LambdaQueryWrapper<DetectionTask>()
                 .eq(DetectionTask::getStatus, "FAILED")
                 .orderByDesc(DetectionTask::getUpdatedAt)
-                .last("limit 1"));
+                .last("limit 1");
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!detectionTaskAccessPolicy.isAdmin(authentication)) {
+            if (authentication == null || !StringUtils.hasText(authentication.getName())) {
+                failedTaskQuery.apply("1 = 0");
+            } else {
+                failedTaskQuery.eq(DetectionTask::getCreatedBy, authentication.getName());
+            }
+        }
+        DetectionTask failedTask = detectionTaskMapper.selectOne(failedTaskQuery);
+        if (failedTask != null) {
+            detectionTaskAccessPolicy.assertCanAccess(failedTask, authentication);
+        }
 
         StringBuilder data = new StringBuilder();
         data.append("OSS 配置状态：").append(ossStorageService.isConfigured() ? "已配置" : "未配置").append("\n");

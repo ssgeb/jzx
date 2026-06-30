@@ -25,6 +25,39 @@
 - Maven 3.6+
 - Node.js 14+
 - MySQL 8.0+
+- Conda + Python 3.10（统一使用 `leetcode` 环境）
+
+### Python 环境
+
+项目内的 Playwright 测试、Kafka 检测 worker 和 Python 测试统一使用
+`leetcode` Conda 环境。首次配置可执行：
+
+```powershell
+conda env create -f environment.yml
+conda run -n leetcode python -m playwright install chromium
+```
+
+如果本机已经存在 `leetcode` 环境，可按清单更新：
+
+```powershell
+conda env update -n leetcode -f environment.yml
+```
+
+项目提供统一入口，避免当前终端误用 Conda base：
+
+```powershell
+# 验证浏览器
+.\scripts\run-python.ps1 frontend\tests\test_browser.py
+
+# 执行前端自动化测试（需先启动前后端）
+.\scripts\run-python.ps1 frontend\tests\test_frontend.py
+
+# 执行 Python 智能体测试
+.\scripts\run-python.ps1 tests_python\test_agent.py
+
+# 启动 Kafka 检测 worker
+.\scripts\run-python.ps1 kafka_detection_worker.py
+```
 
 ### 数据库设置
 

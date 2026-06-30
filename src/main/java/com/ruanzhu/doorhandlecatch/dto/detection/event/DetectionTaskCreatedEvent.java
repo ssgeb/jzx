@@ -13,6 +13,7 @@ public class DetectionTaskCreatedEvent {
     private String eventType;
     private String eventTime;
     private String taskId;
+    private String dispatchId;
     private String bucketName;
     private String sourcePrefix;
     private List<String> originalKeys;

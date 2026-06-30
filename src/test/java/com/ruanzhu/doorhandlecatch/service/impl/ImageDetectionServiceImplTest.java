@@ -8,20 +8,29 @@ import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.entity.ModelInfo;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ModelInfoMapper;
+import com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy;
 import com.ruanzhu.doorhandlecatch.service.ImageInferenceService;
 import com.ruanzhu.doorhandlecatch.service.ModelService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -37,6 +46,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class ImageDetectionServiceImplTest {
@@ -56,6 +66,9 @@ class ImageDetectionServiceImplTest {
     @Mock
     private ImageDetectionAsyncService imageDetectionAsyncService;
 
+    @Spy
+    private DetectionTaskAccessPolicy detectionTaskAccessPolicy = new DetectionTaskAccessPolicy();
+
     @InjectMocks
     private ImageDetectionServiceImpl imageDetectionService;
 
@@ -64,9 +77,19 @@ class ImageDetectionServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "admin",
+                        "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
         ReflectionTestUtils.setField(imageDetectionService, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(imageDetectionService, "maxImagesPerBatch", 200);
         ReflectionTestUtils.setField(imageDetectionService, "maxImageBytes", 10L * 1024L * 1024L);
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -136,6 +159,26 @@ class ImageDetectionServiceImplTest {
         assertFalse(Files.exists(resultDir));
         assertFalse(Files.exists(annotatedDir));
         verify(detectionTaskMapper).deleteById(10L);
+    }
+
+    @Test
+    void deleteDetectionDataRejectsForeignTaskForOperator() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "alice",
+                        "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
+        DetectionTask task = new DetectionTask();
+        task.setId(10L);
+        task.setCreatedBy("bob");
+        when(detectionTaskMapper.selectById(10L)).thenReturn(task);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> imageDetectionService.deleteDetectionData(10L));
+
+        assertEquals(403, exception.getCode());
+        verify(detectionTaskMapper, never()).deleteById(10L);
     }
 
     @Test
@@ -222,5 +265,72 @@ class ImageDetectionServiceImplTest {
         Map<String, Object> statistics = new ObjectMapper().readValue(persistedTask.getStatisticsJson(), Map.class);
         assertEquals(100.0, ((Number) statistics.get("missDetectionRate")).doubleValue());
         assertTrue(persistedTask.getResultOssPrefix().contains("annotated"));
+    }
+
+    @Test
+    void detectImageSupportsRelativeUploadDirectoryWithServletMultipartFile() {
+        ModelInfo modelInfo = new ModelInfo();
+        modelInfo.setModelId(7);
+        modelInfo.setVersion("v1");
+        modelInfo.setModelPath(tempDir.resolve("model.onnx").toString());
+        when(modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
+        when(imageInferenceService.classify(any(Path.class), eq(modelInfo.getModelPath())))
+                .thenReturn(new ImageInferenceService.ClassificationResult("Normal", 0.9f, Map.of("Normal", 0.9f)));
+
+        Path workingDirectory = Path.of("").toAbsolutePath().normalize();
+        String relativeUploadDir = workingDirectory.relativize(tempDir.resolve("images").toAbsolutePath()).toString();
+        String relativeAnnotatedDir = workingDirectory.relativize(tempDir.resolve("annotated").toAbsolutePath()).toString();
+        ReflectionTestUtils.setField(imageDetectionService, "uploadDir", relativeUploadDir);
+        ReflectionTestUtils.setField(imageDetectionService, "annotatedDir", relativeAnnotatedDir);
+
+        MockMultipartFile file = servletStyleMultipartFile("file", "sample.jpg", "demo-image".getBytes());
+
+        SingleImageDetectionResponse response = imageDetectionService.detectImage(file, 7);
+
+        assertEquals("Normal", response.getCategory());
+        assertEquals(null, response.getErrorMessage());
+        verify(imageInferenceService).classify(any(Path.class), eq(modelInfo.getModelPath()));
+    }
+
+    @Test
+    void processImageDetectionSupportsRelativeUploadDirectoryWithServletMultipartFile() {
+        ModelInfo modelInfo = new ModelInfo();
+        modelInfo.setModelId(7);
+        modelInfo.setModelPath(tempDir.resolve("model.onnx").toString());
+        when(modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
+        when(detectionTaskMapper.insert(any(DetectionTask.class))).thenAnswer(invocation -> {
+            DetectionTask task = invocation.getArgument(0);
+            ReflectionTestUtils.setField(task, "id", 101L);
+            return 1;
+        });
+
+        Path workingDirectory = Path.of("").toAbsolutePath().normalize();
+        ReflectionTestUtils.setField(imageDetectionService, "imageUploadDir",
+                workingDirectory.relativize(tempDir.resolve("images").toAbsolutePath()).toString());
+        ReflectionTestUtils.setField(imageDetectionService, "resultDir",
+                workingDirectory.relativize(tempDir.resolve("results").toAbsolutePath()).toString());
+        ReflectionTestUtils.setField(imageDetectionService, "annotatedDir",
+                workingDirectory.relativize(tempDir.resolve("annotated").toAbsolutePath()).toString());
+
+        MockMultipartFile file = servletStyleMultipartFile("files", "sample.jpg", "demo-image".getBytes());
+
+        ImageDetectionResponse response = imageDetectionService.processImageDetection(
+                List.of(file), 7, "COCO", 0.5f);
+
+        assertEquals("PROCESSING", response.getStatus());
+        assertEquals(101L, response.getId());
+    }
+
+    private MockMultipartFile servletStyleMultipartFile(String name, String filename, byte[] content) {
+        return new MockMultipartFile(name, filename, "image/jpeg", content) {
+            @Override
+            public void transferTo(File destination) throws IOException {
+                if (!destination.isAbsolute()) {
+                    throw new IOException(new NoSuchFileException(
+                            tempDir.resolve(destination.getPath()).toString()));
+                }
+                super.transferTo(destination);
+            }
+        };
     }
 }

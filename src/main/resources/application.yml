@@ -17,7 +17,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${DB_URL:jdbc:mysql://localhost:3306/doorhandledb?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=utf8mb4&rewriteBatchedStatements=true&connectionCollation=utf8mb4_unicode_ci}
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:root}
+    password: ${DB_PASSWORD:}
     hikari:
       connection-init-sql: SET NAMES utf8mb4
       maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
@@ -118,7 +118,7 @@ info:
     version: 0.0.1-SNAPSHOT
 
 jwt:
-  secret: ${JWT_SECRET:doorhandlecatch-jwt-secret-key-2026-at-least-256-bits}
+  secret: ${JWT_SECRET:}
   expiration: ${JWT_EXPIRATION:604800}
 
 model:
@@ -140,6 +140,8 @@ file:
       images: ${DETECTION_UPLOAD_DIR:${user.dir}/uploads/images}
 
 app:
+  security:
+    cookie-secure: ${APP_COOKIE_SECURE:false}
   redis:
     enabled: ${APP_REDIS_ENABLED:false}
     key-prefix: ${APP_REDIS_KEY_PREFIX:doorhandlecatch}
@@ -151,8 +153,17 @@ app:
       employee: ${APP_REDIS_TTL_EMPLOYEE:10m}
       detection-task: ${APP_REDIS_TTL_DETECTION_TASK:2m}
       chat-session: ${APP_REDIS_TTL_CHAT_SESSION:15m}
+  business-seed:
+    enabled: ${APP_BUSINESS_SEED_ENABLED:false}
+    continue-on-error: ${APP_BUSINESS_SEED_CONTINUE_ON_ERROR:false}
+    scripts:
+      - classpath:db/migration-V14-security-reliability-hardening.sql
+      - classpath:db/migration-V13-business-seed-data-normalization.sql
+      - classpath:db/business-seed-new-features.sql
+      - classpath:db/business-seed-more-features.sql
+      - classpath:db/business-seed-trace-rich.sql
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:5173,http://localhost:8080}
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3001,http://127.0.0.1:3001,http://localhost:3002,http://127.0.0.1:3002,http://localhost:3003,http://127.0.0.1:3003,http://localhost:3004,http://127.0.0.1:3004,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080}
     allowed-methods: ${APP_CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS,HEAD}
     allowed-headers: ${APP_CORS_ALLOWED_HEADERS:*}
     exposed-headers: ${APP_CORS_EXPOSED_HEADERS:Authorization,Content-Type}
@@ -167,6 +178,7 @@ app:
   kafka:
     enabled: ${APP_KAFKA_ENABLED:true}
     bootstrap-servers: ${APP_KAFKA_BOOTSTRAP_SERVERS:10.20.144.118:9092}
+    send-timeout-ms: ${APP_KAFKA_SEND_TIMEOUT_MS:10000}
     consumer-group: ${APP_KAFKA_CONSUMER_GROUP:doorhandlecatch-detection}
     topics:
       task-created: ${APP_KAFKA_TOPIC_TASK_CREATED:detection.task.created}
@@ -194,6 +206,11 @@ chat-assistant:
   max-requests-per-minute: ${CHAT_ASSISTANT_MAX_REQUESTS_PER_MINUTE:30}
   max-scan-depth: ${CHAT_ASSISTANT_MAX_SCAN_DEPTH:4}
   max-scan-files: ${CHAT_ASSISTANT_MAX_SCAN_FILES:200}
+  voice-transcribe-url: ${CHAT_ASSISTANT_VOICE_TRANSCRIBE_URL:}
+  voice-connect-timeout-ms: ${CHAT_ASSISTANT_VOICE_CONNECT_TIMEOUT_MS:1500}
+  voice-read-timeout-ms: ${CHAT_ASSISTANT_VOICE_READ_TIMEOUT_MS:15000}
+  voice-max-bytes: ${CHAT_ASSISTANT_VOICE_MAX_BYTES:10485760}
+  voice-transcribe-allowed-hosts: ${CHAT_ASSISTANT_VOICE_TRANSCRIBE_ALLOWED_HOSTS:localhost,127.0.0.1,::1}
   rag-enabled: ${CHAT_ASSISTANT_RAG_ENABLED:true}
   rag-query-rewrite-enabled: ${CHAT_ASSISTANT_RAG_QUERY_REWRITE_ENABLED:true}
   rag-rerank-enabled: ${CHAT_ASSISTANT_RAG_RERANK_ENABLED:true}
