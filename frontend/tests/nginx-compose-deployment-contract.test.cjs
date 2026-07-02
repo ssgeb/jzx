@@ -57,3 +57,14 @@ test('compose exposes only nginx to the host', () => {
   assert.match(compose, /NGINX_PORT:-80}:80/)
   assert.match(compose, /condition:\s*service_healthy/)
 })
+
+test('deployment environment example uses external services and placeholders', () => {
+  const env = read('deploy/docker.env.example')
+  const gitignore = read('.gitignore')
+  assert.match(env, /DB_URL=jdbc:mysql:\/\/host\.docker\.internal:3306\/doorhandledb/)
+  assert.match(env, /REDIS_HOST=host\.docker\.internal/)
+  assert.match(env, /APP_KAFKA_BOOTSTRAP_SERVERS=host\.docker\.internal:9092/)
+  assert.match(env, /JWT_SECRET=replace-with-at-least-32-random-characters/)
+  assert.doesNotMatch(env, /sk-[A-Za-z0-9]{16,}/)
+  assert.match(gitignore, /^deploy\/docker\.env$/m)
+})
