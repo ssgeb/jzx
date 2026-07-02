@@ -23,6 +23,20 @@ services:
     <<: *backend-service
   backend-2:
     <<: *backend-service
+  nginx:
+    build:
+      context: .
+      dockerfile: deploy/nginx/Dockerfile
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+    networks:
+      - doorhandle-network
+    restart: unless-stopped
 
 volumes:
   doorhandle-runtime:
