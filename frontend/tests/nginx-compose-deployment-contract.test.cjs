@@ -29,6 +29,7 @@ test('backend image uses Maven build and non-root Java runtime', () => {
   assert.match(dockerfile, /FROM maven:.* AS build/)
   assert.match(dockerfile, /mvnw\.cmd|\.\/mvnw|mvn .*package/)
   assert.match(dockerfile, /FROM eclipse-temurin:17-jre/)
+  assert.match(dockerfile, /chown -R app:app \/app/)
   assert.match(dockerfile, /USER app/)
   assert.match(dockerfile, /actuator\/health/)
 })

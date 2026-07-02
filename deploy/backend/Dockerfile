@@ -9,7 +9,8 @@ FROM eclipse-temurin:17-jre-alpine
 RUN addgroup -S app && adduser -S app -G app \
     && apk add --no-cache curl
 WORKDIR /app
-COPY --from=build /workspace/target/DoorHandleCatch-*.jar app.jar
+RUN mkdir -p /app/uploads /app/logs && chown -R app:app /app
+COPY --chown=app:app --from=build /workspace/target/DoorHandleCatch-*.jar app.jar
 USER app
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=5 \
