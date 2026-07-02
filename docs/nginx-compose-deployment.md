@@ -5,7 +5,7 @@
 ## 1. 前置条件
 
 - Docker Desktop 已启动；
-- Docker Compose V2 可用，执行 `docker compose version` 能输出版本；
+- Docker Compose 可用，优先使用 `docker compose`；也兼容独立的 `docker-compose` 命令；
 - 外部 MySQL、Redis、Kafka 已启动，并允许 Docker 容器访问；
 - 如启用 Mem0，确保其服务地址可由容器访问；
 - OSS、DeepSeek 和 JWT 使用独立的生产凭据。
@@ -42,6 +42,12 @@ MEM0_ENABLED=false
 
 ```powershell
 docker compose -f compose.nginx.yml up -d --build
+```
+
+如果系统使用独立 Compose，可将后续命令中的 `docker compose` 替换为：
+
+```powershell
+docker-compose -f compose.nginx.yml up -d --build
 ```
 
 默认访问地址为 `http://localhost`。如需修改端口：
@@ -138,4 +144,4 @@ docker compose -f compose.nginx.yml up -d --build
 
 ## 8. 当前开发机说明
 
-当前开发机已安装 Docker CLI，但 Docker Engine 未启动且缺少 `docker compose` 插件。仓库契约测试可以验证 Compose、Dockerfile 和 Nginx 配置结构；实际容器构建和运行需要先安装/启用 Docker Desktop 与 Compose V2。
+当前开发机可以通过独立的 `docker-compose v5.1.1` 解析配置，但 `docker compose` 子命令不可用，且 Docker Engine 未启动。仓库契约测试和 `docker-compose config` 已覆盖静态验证；实际镜像构建和容器运行需要先启动 Docker Desktop。

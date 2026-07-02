@@ -463,9 +463,10 @@ Expected: Java and Python suites exit 0.
 
 ```powershell
 docker compose -f compose.nginx.yml --env-file deploy/docker.env.example config
+docker-compose -f compose.nginx.yml --env-file deploy/docker.env.example config
 ```
 
-Expected when Docker Compose V2 is installed: rendered configuration exits 0. On the current machine, record the known prerequisite blocker (`docker compose` plugin unavailable) without weakening repository contract verification.
+Expected: use whichever Compose command is installed; rendered configuration exits 0. On the current machine, standalone `docker-compose` is available while the plugin command is not.
 
 - [ ] **Step 4: Check patch hygiene and repository state**
 

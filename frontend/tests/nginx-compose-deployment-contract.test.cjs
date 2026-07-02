@@ -69,3 +69,8 @@ test('deployment environment example uses external services and placeholders', (
   assert.doesNotMatch(env, /sk-[A-Za-z0-9]{16,}/)
   assert.match(gitignore, /^deploy\/docker\.env$/m)
 })
+
+test('deployment guide documents standalone Compose fallback', () => {
+  const guide = read('docs/nginx-compose-deployment.md')
+  assert.match(guide, /docker-compose -f compose\.nginx\.yml/)
+})
