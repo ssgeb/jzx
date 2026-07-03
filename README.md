@@ -134,6 +134,22 @@ cd frontend
 npm run dev
 ```
 
+### Nginx + Docker Compose 生产部署
+
+项目提供 Nginx Web 服务器、API 反向代理和双 Spring Boot 实例负载均衡配置：
+
+```powershell
+Copy-Item deploy/docker.env.example deploy/docker.env
+$env:DOORHANDLE_ENV_FILE = 'deploy/docker.env'
+docker compose -f compose.nginx.yml up -d --build
+```
+
+完整的环境变量、健康检查、SSE、故障切换和回滚说明见：
+
+```text
+docs/nginx-compose-deployment.md
+```
+
 ### 图像检测
 
 1. 访问系统：http://localhost:3001

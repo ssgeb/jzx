@@ -36,6 +36,7 @@ build/
 .env
 .env.*
 !.env.example
+deploy/docker.env
 
 ### Runtime logs ###
 *.log
