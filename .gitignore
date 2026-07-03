@@ -76,3 +76,6 @@ __pycache__/
 
 ### Local brainstorming previews ###
 .superpowers/
+
+### Local Git worktrees ###
+.worktrees/
