@@ -234,4 +234,3 @@ addTraceEvent(events, "DISPOSED", "质检处置", task.getDisposedAt(),
 ### 5. 为什么返工后要清空旧处置？
 
 返工后的产品状态已发生变化，旧复核和处置不能代表新结果，必须重新进入复核或复检队列。
-

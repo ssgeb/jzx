@@ -260,4 +260,3 @@ if (staleDispatch || duplicateEvent) return;
 ### 6. 当前还能如何增强？
 
 可增加失败 Topic/DLQ、Worker 幂等结果缓存、消费延迟监控和基于 GPU 使用率的弹性扩容。
-
