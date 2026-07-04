@@ -33,7 +33,7 @@ Nginx Container
 | Nginx 配置 | `deploy/nginx/nginx.conf` | 静态、代理、负载均衡、SSE |
 | 网关镜像 | `deploy/nginx/Dockerfile` | 构建 Vue 并复制到 Nginx |
 | 后端镜像 | `deploy/backend/Dockerfile` | Maven/JRE 多阶段构建 |
-| 环境模板 | `deploy/docker.env.example` | 外部服务连接和密钥占位 |
+| 环境模板 | `deploy/docker.env.example` | 外部服务连接和安全示例值 |
 | 部署指南 | `docs/nginx-compose-deployment.md` | 启停、验证和排错 |
 
 ## 四、详细流程图
@@ -262,4 +262,3 @@ Agent 和报告请求耗时不同，轮询只按数量分配；least_conn 更能
 ### 6. 当前方案是高可用集群吗？
 
 它提供应用层双实例冗余，但单机 Nginx 和 Docker Host 仍是单点；生产级高可用还需要多节点编排和外部负载均衡。
-
