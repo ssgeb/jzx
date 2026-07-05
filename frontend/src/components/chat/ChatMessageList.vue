@@ -64,6 +64,7 @@
     <template v-for="(item, idx) in messages" :key="item.id || `${item.role}-${item.createdAt}-${idx}`">
       <div
         class="msg-row"
+        :data-message-key="buildChatMessageKey(item, idx)"
         :class="item.role === 'user' ? 'is-user' : 'is-assistant'"
         :style="{ animationDelay: `${Math.min(idx * 40, 300)}ms` }"
       >
@@ -143,8 +144,10 @@
 </template>
 
 <script setup>
+import { onUnmounted, ref } from 'vue'
 import ChatBusinessCard from './ChatBusinessCard.vue'
 import ChatPendingActionCard from './ChatPendingActionCard.vue'
+import { buildChatMessageKey } from '@/utils/chatMessageNavigation'
 
 defineProps({
   messages: { type: Array, default: () => [] },
@@ -153,6 +156,29 @@ defineProps({
 })
 
 const emit = defineEmits(['confirm', 'send'])
+const listRef = ref(null)
+let highlightTimer = null
+
+const locateMessage = (key) => {
+  const target = Array.from(listRef.value?.querySelectorAll('[data-message-key]') || [])
+    .find(element => element.dataset.messageKey === key)
+  if (!target) return false
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+  if (highlightTimer) window.clearTimeout(highlightTimer)
+  listRef.value?.querySelector('.question-locate-highlight')?.classList.remove('question-locate-highlight')
+  target.classList.add('question-locate-highlight')
+  highlightTimer = window.setTimeout(() => {
+    target.classList.remove('question-locate-highlight')
+    highlightTimer = null
+  }, 1500)
+  return true
+}
+
+defineExpose({ locateMessage })
+onUnmounted(() => {
+  if (highlightTimer) window.clearTimeout(highlightTimer)
+})
 
 const handleConfirm = (actionId, confirmed) => {
   emit('confirm', actionId, confirmed)
@@ -368,6 +394,14 @@ const escapeHtml = (str) => {
   animation: msg-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
+.msg-row.question-locate-highlight {
+  border-radius: 18px;
+  outline: 2px solid rgba(79, 110, 247, 0.42);
+  outline-offset: 4px;
+  background: rgba(79, 110, 247, 0.08);
+  transition: background-color 0.25s ease, outline-color 0.25s ease;
+}
+
 @keyframes msg-in {
   from {
     opacity: 0;
@@ -377,6 +411,11 @@ const escapeHtml = (str) => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-row { animation: none; }
+  .msg-row.question-locate-highlight { transition: none; }
 }
 
 .is-user { flex-direction: row-reverse; }
