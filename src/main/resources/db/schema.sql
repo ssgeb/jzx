@@ -40,9 +40,6 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO users (id, username, password, email, phone, role)
-VALUES (1, 'admin', '$2b$12$1JubAveAPOmdM2wuxLsHAOGDkXOcAaUff2fraVjbpGcvz/.mrQdf6', 'admin@example.com', '13800138000', 'ADMIN');
-
 -- ============================================================
 -- 模型管理表（model_id 直接作为主键）
 -- ============================================================
