@@ -4,25 +4,24 @@ import com.ruanzhu.doorhandlecatch.common.BusinessException;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 public class DetectionTaskAccessPolicy {
 
     public boolean isAdmin(Authentication authentication) {
         return authentication != null
-                && authentication.getAuthorities() != null
-                && authentication.getAuthorities().stream()
-                .anyMatch(authority -> authority != null
-                        && "ROLE_ADMIN".equals(authority.getAuthority()));
+                && authentication.isAuthenticated()
+                && StringUtils.hasText(authentication.getName());
     }
 
     public void assertCanAccess(DetectionTask task, Authentication authentication) {
-        boolean owner = task != null
-                && authentication != null
-                && authentication.getName() != null
-                && authentication.getName().equals(task.getCreatedBy());
-        if (!isAdmin(authentication) && !owner) {
-            throw new BusinessException(403, "无权访问该资源");
+        assertAuthenticated(authentication);
+    }
+
+    public void assertAuthenticated(Authentication authentication) {
+        if (!isAdmin(authentication)) {
+            throw new BusinessException(401, "请先登录");
         }
     }
 }
