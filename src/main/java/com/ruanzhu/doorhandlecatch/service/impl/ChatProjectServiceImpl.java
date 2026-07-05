@@ -30,7 +30,6 @@ public class ChatProjectServiceImpl implements ChatProjectService {
     @Override
     public List<ChatProjectResponse> listUserProjects(String username) {
         List<ChatProject> projects = chatProjectMapper.selectList(new LambdaQueryWrapper<ChatProject>()
-                .eq(ChatProject::getUsername, username)
                 .orderByAsc(ChatProject::getSortOrder)
                 .orderByDesc(ChatProject::getCreatedAt));
 
@@ -78,13 +77,9 @@ public class ChatProjectServiceImpl implements ChatProjectService {
 
         // 将项目中的会话移出项目
         List<ChatSession> sessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getProjectId, projectId)
-                .eq(ChatSession::getUsername, username));
+                .eq(ChatSession::getProjectId, projectId));
 
         for (ChatSession session : sessions) {
-            if (!username.equals(session.getUsername())) {
-                continue;
-            }
             session.setProjectId(null);
             session.setUpdatedAt(LocalDateTime.now());
             chatSessionMapper.updateById(session);
@@ -104,13 +99,7 @@ public class ChatProjectServiceImpl implements ChatProjectService {
             throw new BusinessException(404, "会话不存在");
         }
 
-        // 校验会话属于当前用户
-        if (!username.equals(session.getUsername())) {
-            throw new BusinessException(403, "无权操作此会话");
-        }
-
         if (projectId != null) {
-            // 校验目标项目属于当前用户
             getProjectOwnedByUser(username, projectId);
         }
 
@@ -134,10 +123,6 @@ public class ChatProjectServiceImpl implements ChatProjectService {
 
         if (project == null) {
             throw new BusinessException(404, "项目不存在");
-        }
-
-        if (!username.equals(project.getUsername())) {
-            throw new BusinessException(403, "无权操作此项目");
         }
 
         return project;
