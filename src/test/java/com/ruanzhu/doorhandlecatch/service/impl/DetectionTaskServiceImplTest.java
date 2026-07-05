@@ -100,7 +100,7 @@ class DetectionTaskServiceImplTest {
     }
 
     @Test
-    void getTaskProgressRejectsTaskOwnedByAnotherUser() {
+    void getTaskProgressAllowsTaskOwnedByAnotherUser() {
         DetectionTask task = new DetectionTask();
         task.setTaskId("det_private");
         task.setCreatedBy("bob");
@@ -110,10 +110,7 @@ class DetectionTaskServiceImplTest {
                         List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")))
         );
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> detectionTaskService.getTaskProgress("det_private"));
-
-        assertEquals("无权访问该资源", ex.getMessage());
+        assertEquals("det_private", detectionTaskService.getTaskProgress("det_private").getTaskId());
     }
 
     @Test

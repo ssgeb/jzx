@@ -388,7 +388,7 @@ class DetectionAgentServiceImplTest {
     }
 
     @Test
-    void executeConfirmedActionRejectsForeignWorkOrderForOperator() {
+    void executeConfirmedActionAllowsForeignWorkOrderForOperator() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
                         "alice",
@@ -400,21 +400,28 @@ class DetectionAgentServiceImplTest {
         task.setWorkOrderNo("WO-20260611-001");
         task.setCreatedBy("bob");
         when(detectionTaskMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(task));
+        when(detectionTaskService.disposeTask(eq("det_20260611_151200_abcd1234"), any(DetectionDispositionRequest.class)))
+                .thenReturn(DetectionTaskProgressResponse.builder()
+                        .taskId("det_20260611_151200_abcd1234")
+                        .workOrderNo("WO-20260611-001")
+                        .flowStatus("REWORK_REQUIRED")
+                        .dispositionAction("REWORK")
+                        .message("质检处置已提交")
+                        .build());
 
         DetectionAgentServiceImpl service = newService();
 
-        assertThatThrownBy(() -> service.executeConfirmedAction(
+        AgentExecutionResult result = service.executeConfirmedAction(
                 "将工单 WO-20260611-001 标记为返工",
                 "alice",
                 "sess_demo"
-        )).isInstanceOf(BusinessException.class)
-                .extracting("code")
-                .isEqualTo(403);
-        verify(detectionTaskService, never()).disposeTask(any(), any());
+        );
+        assertThat(result.getContent()).contains("已将工单", "返工");
+        verify(detectionTaskService).disposeTask(any(), any());
     }
 
     @Test
-    void answerRejectsForeignTaskForOperator() {
+    void answerAllowsForeignTaskForOperator() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
                         "alice",
@@ -428,11 +435,9 @@ class DetectionAgentServiceImplTest {
 
         DetectionAgentServiceImpl service = newService();
 
-        assertThatThrownBy(() -> service.answer(
+        assertThat(service.answer(
                 "查询任务 det_20260611_151200_abcd1234",
                 "alice"
-        )).isInstanceOf(BusinessException.class)
-                .extracting("code")
-                .isEqualTo(403);
+        )).isNotNull();
     }
 }

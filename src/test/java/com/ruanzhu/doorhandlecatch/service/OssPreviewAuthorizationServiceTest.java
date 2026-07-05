@@ -48,7 +48,7 @@ class OssPreviewAuthorizationServiceTest {
     }
 
     @Test
-    void ownerCanPreviewWhenForeignTaskReferencesSameKey() {
+    void authenticatedUserCanPreviewWhenAnyTaskReferencesSameKey() {
         String key = "detection/shared/original/a.jpg";
         ArgumentCaptor<LambdaQueryWrapper<DetectionTask>> queryCaptor =
                 ArgumentCaptor.forClass(LambdaQueryWrapper.class);
@@ -60,15 +60,16 @@ class OssPreviewAuthorizationServiceTest {
         service().authorize(key, auth("alice"));
 
         assertThat(queryCaptor.getValue().getSqlSegment())
-                .contains("created_by", "result_json_oss_key", "original_image_keys_json", "preview_image_keys_json");
+                .doesNotContain("created_by")
+                .contains("result_json_oss_key", "original_image_keys_json", "preview_image_keys_json");
     }
 
     @Test
-    void foreignUserCannotPreviewReferencedKey() {
+    void foreignUserCanPreviewReferencedKey() {
         when(mapper.selectList(any())).thenReturn(List.of(
                 task("alice", "[\"detection/task-1/original/a.jpg\"]")));
 
-        assertDenied("detection/task-1/original/a.jpg", auth("bob"));
+        service().authorize("detection/task-1/original/a.jpg", auth("bob"));
     }
 
     @Test
