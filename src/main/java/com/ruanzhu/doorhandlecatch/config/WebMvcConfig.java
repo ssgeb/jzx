@@ -1,6 +1,9 @@
 package com.ruanzhu.doorhandlecatch.config;
 
+import com.ruanzhu.doorhandlecatch.security.OperationAuditInterceptor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -10,7 +13,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Upload directories are served through controllers with path validation.
  */
 @Configuration
+@RequiredArgsConstructor
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    private final OperationAuditInterceptor operationAuditInterceptor;
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(operationAuditInterceptor).addPathPatterns("/api/**");
+    }
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
