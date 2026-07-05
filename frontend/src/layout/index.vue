@@ -114,8 +114,8 @@
           <div class="user-box app-panel">
             <div class="user-avatar">{{ userInitial }}</div>
             <div class="user-meta">
-              <div class="user-name">{{ userStore.username || '管理员' }}</div>
-              <div class="user-role">系统管理账号</div>
+              <div class="user-name">{{ userStore.username || '企业用户' }}</div>
+              <div class="user-role">企业用户</div>
             </div>
             <el-button type="danger" plain size="small" @click="handleLogout">退出登录</el-button>
           </div>
