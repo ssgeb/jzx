@@ -87,6 +87,9 @@ class OpsAgentServiceImplTest {
 
     @Test
     void answerReportsKafkaAndRemoteWorkerStatus() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "alice", "N/A", List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
         KafkaTaskProperties kafkaTaskProperties = new KafkaTaskProperties();
         kafkaTaskProperties.setEnabled(true);
         kafkaTaskProperties.setBootstrapServers("kafka.remote.internal:9092");

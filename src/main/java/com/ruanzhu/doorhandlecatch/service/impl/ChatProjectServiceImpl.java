@@ -141,7 +141,6 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         // 统计项目中的会话数
         Long count = chatSessionMapper.selectCount(new LambdaQueryWrapper<ChatSession>()
                 .eq(ChatSession::getProjectId, project.getProjectId())
-                .eq(ChatSession::getUsername, project.getUsername())
                 .eq(ChatSession::getStatus, "ACTIVE"));
         response.setSessionCount(count != null ? count.intValue() : 0);
 

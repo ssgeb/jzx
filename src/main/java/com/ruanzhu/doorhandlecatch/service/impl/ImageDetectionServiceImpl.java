@@ -152,13 +152,7 @@ public class ImageDetectionServiceImpl implements ImageDetectionService {
     public List<DetectionTask> getAllDetectionData() {
         LambdaQueryWrapper<DetectionTask> wrapper = new LambdaQueryWrapper<>();
         Authentication authentication = currentAuthentication();
-        if (!detectionTaskAccessPolicy.isAdmin(authentication)) {
-            if (authentication == null || authentication.getName() == null) {
-                wrapper.apply("1 = 0");
-            } else {
-                wrapper.eq(DetectionTask::getCreatedBy, authentication.getName());
-            }
-        }
+        detectionTaskAccessPolicy.assertAuthenticated(authentication);
         List<DetectionTask> tasks = detectionTaskMapper.selectList(wrapper);
         tasks.forEach(task -> detectionTaskAccessPolicy.assertCanAccess(task, authentication));
         return tasks;

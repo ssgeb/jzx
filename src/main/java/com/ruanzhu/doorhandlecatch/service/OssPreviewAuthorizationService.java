@@ -29,13 +29,8 @@ public class OssPreviewAuthorizationService {
         if (!StringUtils.hasText(key) || !key.startsWith(ALLOWED_PREFIX)) {
             throw denied();
         }
+        accessPolicy.assertAuthenticated(authentication);
         LambdaQueryWrapper<DetectionTask> query = new LambdaQueryWrapper<>();
-        if (!accessPolicy.isAdmin(authentication)) {
-            if (authentication == null || !StringUtils.hasText(authentication.getName())) {
-                throw denied();
-            }
-            query.eq(DetectionTask::getCreatedBy, authentication.getName());
-        }
         query.and(candidate -> candidate
                 .eq(DetectionTask::getResultJsonOssKey, key)
                 .or()
@@ -44,18 +39,10 @@ public class OssPreviewAuthorizationService {
                 .like(DetectionTask::getPreviewImageKeysJson, key));
 
         DetectionTask referencedTask = detectionTaskMapper.selectList(query).stream()
-                .filter(task -> canAccess(task, authentication))
                 .filter(task -> references(task, key))
                 .findFirst()
                 .orElseThrow(this::denied);
         accessPolicy.assertCanAccess(referencedTask, authentication);
-    }
-
-    private boolean canAccess(DetectionTask task, Authentication authentication) {
-        return accessPolicy.isAdmin(authentication)
-                || authentication != null
-                && authentication.getName() != null
-                && authentication.getName().equals(task.getCreatedBy());
     }
 
     private boolean references(DetectionTask task, String key) {

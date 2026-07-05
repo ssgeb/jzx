@@ -78,13 +78,7 @@ public class OpsAgentServiceImpl implements OpsAgentService {
                 .orderByDesc(DetectionTask::getUpdatedAt)
                 .last("limit 1");
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!detectionTaskAccessPolicy.isAdmin(authentication)) {
-            if (authentication == null || !StringUtils.hasText(authentication.getName())) {
-                failedTaskQuery.apply("1 = 0");
-            } else {
-                failedTaskQuery.eq(DetectionTask::getCreatedBy, authentication.getName());
-            }
-        }
+        detectionTaskAccessPolicy.assertAuthenticated(authentication);
         DetectionTask failedTask = detectionTaskMapper.selectOne(failedTaskQuery);
         if (failedTask != null) {
             detectionTaskAccessPolicy.assertCanAccess(failedTask, authentication);
