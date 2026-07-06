@@ -104,6 +104,8 @@ app = FastAPI(
 class AddMemoryRequest(BaseModel):
     """添加记忆请求"""
     user_id: str = Field(..., description="用户ID")
+    app_id: str = Field(..., min_length=1, description="应用ID")
+    run_id: str = Field(..., min_length=1, description="会话ID")
     content: str = Field(..., description="记忆内容")
     metadata: Optional[dict] = Field(None, description="元数据")
 
@@ -111,6 +113,8 @@ class AddMemoryRequest(BaseModel):
 class SearchMemoryRequest(BaseModel):
     """搜索记忆请求"""
     user_id: str = Field(..., description="用户ID")
+    app_id: str = Field(..., min_length=1, description="应用ID")
+    run_id: str = Field(..., min_length=1, description="会话ID")
     query: str = Field(..., description="搜索查询")
     top_k: int = Field(5, description="返回数量")
 
@@ -145,6 +149,8 @@ async def add_memory(request: AddMemoryRequest):
         result = memory_instance.add(
             request.content,
             user_id=request.user_id,
+            app_id=request.app_id,
+            run_id=request.run_id,
             metadata=request.metadata,
         )
         logger.info(f"添加记忆成功: user={request.user_id}, content={request.content[:50]}...")
@@ -160,7 +166,11 @@ async def search_memories(request: SearchMemoryRequest):
     try:
         results = memory_instance.search(
             request.query,
-            filters={"user_id": request.user_id},
+            filters={"AND": [
+                {"user_id": request.user_id},
+                {"app_id": request.app_id},
+                {"run_id": request.run_id},
+            ]},
             top_k=request.top_k,
         )
         memories = []
