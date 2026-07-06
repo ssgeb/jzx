@@ -193,6 +193,25 @@ CREATE TABLE IF NOT EXISTS `detection_task` (
     CONSTRAINT `fk_detection_task_model` FOREIGN KEY (`model_id`) REFERENCES `model_management` (`model_id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='OSS 检测任务表';
 
+CREATE TABLE IF NOT EXISTS `chat_project` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `project_id` VARCHAR(64) NOT NULL,
+    `username` VARCHAR(64) NOT NULL,
+    `user_id` BIGINT NOT NULL,
+    `name` VARCHAR(100) NOT NULL,
+    `description` VARCHAR(500) DEFAULT NULL,
+    `color` VARCHAR(20) DEFAULT '#4f6ef7',
+    `sort_order` INT DEFAULT 0,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_chat_project_id` (`project_id`),
+    KEY `idx_chat_project_username` (`username`),
+    KEY `idx_chat_project_tenant_sort_created` (`user_id`, `sort_order`, `created_at` DESC),
+    CONSTRAINT `fk_chat_project_user` FOREIGN KEY (`username`) REFERENCES `users` (`username`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_chat_project_tenant_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天项目表';
+
 -- ============================================================
 -- 聊天会话表（外键关联 users 表）
 -- ============================================================
@@ -200,6 +219,7 @@ CREATE TABLE IF NOT EXISTS `chat_session` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `session_id` VARCHAR(64) NOT NULL COMMENT '会话编号',
     `username` VARCHAR(64) NOT NULL COMMENT '用户名（外键 -> users.username）',
+    `user_id` BIGINT NOT NULL COMMENT '不可变用户租户ID（外键 -> users.id）',
     `title` VARCHAR(255) DEFAULT NULL COMMENT '会话标题',
     `status` VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '会话状态',
     `pinned` TINYINT(1) DEFAULT 0 COMMENT '是否置顶',
@@ -217,8 +237,11 @@ CREATE TABLE IF NOT EXISTS `chat_session` (
     KEY `idx_chat_session_pinned_updated` (`pinned` DESC, `updated_at` DESC),
     KEY `idx_chat_session_user_status_updated` (`username`, `status`, `updated_at` DESC),
     KEY `idx_chat_session_user_status_pinned_updated` (`username`, `status`, `pinned` DESC, `updated_at` DESC),
+    KEY `idx_chat_session_tenant_status_updated` (`user_id`, `status`, `updated_at` DESC),
+    KEY `idx_chat_session_tenant_status_pinned_updated` (`user_id`, `status`, `pinned` DESC, `updated_at` DESC),
     KEY `idx_chat_session_checkpoint_updated` (`checkpoint_updated_at` DESC),
-    CONSTRAINT `fk_chat_session_user` FOREIGN KEY (`username`) REFERENCES `users` (`username`) ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT `fk_chat_session_user` FOREIGN KEY (`username`) REFERENCES `users` (`username`) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT `fk_chat_session_tenant_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天会话表';
 
 -- ============================================================
