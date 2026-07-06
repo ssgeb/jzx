@@ -16,8 +16,10 @@ import com.ruanzhu.doorhandlecatch.mapper.ChatMessageMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatPendingActionMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatSessionMapper;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -71,8 +73,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
 
     @Override
     public List<ChatSessionResponse> listUserSessions(String username) {
-        List<ChatSession> sessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getUsername, username)
+        LambdaQueryWrapper<ChatSession> query = new LambdaQueryWrapper<>();
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatSession::getUserId, userId);
+        else query.eq(ChatSession::getUsername, username);
+        List<ChatSession> sessions = chatSessionMapper.selectList(query
                 .eq(ChatSession::getStatus, "ACTIVE")
                 .orderByDesc(ChatSession::getPinned)
                 .orderByDesc(ChatSession::getUpdatedAt));
@@ -165,6 +170,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         ChatSession session = new ChatSession();
         session.setSessionId(sessionId);
         session.setUsername(username);
+        session.setUserId(currentUserId());
         session.setTitle(title);
         session.setStatus("ACTIVE");
         session.setCreatedAt(LocalDateTime.now());
@@ -281,10 +287,12 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     }
 
     private ChatSession requireOwnedSession(String username, String sessionId) {
-        ChatSession session = chatSessionMapper.selectOne(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getSessionId, sessionId)
-                .eq(ChatSession::getUsername, username)
-                .last("limit 1"));
+        LambdaQueryWrapper<ChatSession> query = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getSessionId, sessionId);
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatSession::getUserId, userId);
+        else query.eq(ChatSession::getUsername, username);
+        ChatSession session = chatSessionMapper.selectOne(query.last("limit 1"));
         if (session == null) {
             throw new BusinessException(404, "会话不存在");
         }
@@ -406,5 +414,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
                 .map(entry -> entry.getKey() + ":" + entry.getValue())
                 .sorted()
                 .collect(Collectors.toList());
+    }
+
+    private Long currentUserId() {
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return principal instanceof TenantPrincipal tenantPrincipal ? tenantPrincipal.userId() : null;
     }
 }

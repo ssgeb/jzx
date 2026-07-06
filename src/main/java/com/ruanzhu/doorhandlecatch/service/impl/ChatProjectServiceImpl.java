@@ -9,8 +9,10 @@ import com.ruanzhu.doorhandlecatch.entity.ChatSession;
 import com.ruanzhu.doorhandlecatch.mapper.ChatProjectMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatSessionMapper;
 import com.ruanzhu.doorhandlecatch.service.ChatProjectService;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -29,8 +31,11 @@ public class ChatProjectServiceImpl implements ChatProjectService {
 
     @Override
     public List<ChatProjectResponse> listUserProjects(String username) {
-        List<ChatProject> projects = chatProjectMapper.selectList(new LambdaQueryWrapper<ChatProject>()
-                .eq(ChatProject::getUsername, username)
+        LambdaQueryWrapper<ChatProject> query = new LambdaQueryWrapper<>();
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatProject::getUserId, userId);
+        else query.eq(ChatProject::getUsername, username);
+        List<ChatProject> projects = chatProjectMapper.selectList(query
                 .orderByAsc(ChatProject::getSortOrder)
                 .orderByDesc(ChatProject::getCreatedAt));
 
@@ -46,6 +51,7 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         ChatProject project = new ChatProject();
         project.setProjectId(projectId);
         project.setUsername(username);
+        project.setUserId(currentUserId());
         project.setName(request.getName());
         project.setDescription(request.getDescription());
         project.setColor(request.getColor() != null ? request.getColor() : "#4f6ef7");
@@ -128,16 +134,15 @@ public class ChatProjectServiceImpl implements ChatProjectService {
      * 获取项目并校验所有权
      */
     private ChatProject getProjectOwnedByUser(String username, String projectId) {
-        ChatProject project = chatProjectMapper.selectOne(new LambdaQueryWrapper<ChatProject>()
-                .eq(ChatProject::getProjectId, projectId)
-                .last("limit 1"));
+        LambdaQueryWrapper<ChatProject> query = new LambdaQueryWrapper<ChatProject>()
+                .eq(ChatProject::getProjectId, projectId);
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatProject::getUserId, userId);
+        else query.eq(ChatProject::getUsername, username);
+        ChatProject project = chatProjectMapper.selectOne(query.last("limit 1"));
 
         if (project == null) {
             throw new BusinessException(404, "项目不存在");
-        }
-
-        if (!username.equals(project.getUsername())) {
-            throw new BusinessException(403, "无权操作此项目");
         }
 
         return project;
@@ -161,5 +166,11 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         response.setSessionCount(count != null ? count.intValue() : 0);
 
         return response;
+    }
+
+    private Long currentUserId() {
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return principal instanceof TenantPrincipal tenantPrincipal ? tenantPrincipal.userId() : null;
     }
 }

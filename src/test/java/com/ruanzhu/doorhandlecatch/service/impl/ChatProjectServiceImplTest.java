@@ -2,10 +2,20 @@ package com.ruanzhu.doorhandlecatch.service.impl;
 
 import com.ruanzhu.doorhandlecatch.entity.ChatProject;
 import com.ruanzhu.doorhandlecatch.entity.ChatSession;
+import com.ruanzhu.doorhandlecatch.dto.chat.ChatProjectRequest;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import com.ruanzhu.doorhandlecatch.mapper.ChatProjectMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatSessionMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 
@@ -16,6 +26,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ChatProjectServiceImplTest {
+
+    @BeforeAll
+    static void initMetadata() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), ChatProject.class);
+    }
 
     private ChatProjectMapper chatProjectMapper;
     private ChatSessionMapper chatSessionMapper;
@@ -54,5 +69,33 @@ class ChatProjectServiceImplTest {
         assertThat(otherSession.getProjectId()).isEqualTo("proj_admin_001");
         verify(chatSessionMapper).updateById(ownSession);
         verify(chatProjectMapper).deleteById(10L);
+    }
+
+    @Test
+    void createdProjectStoresImmutableTenantUserId() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new TenantPrincipal(42L, "alice", "N/A", List.of()), null, List.of()));
+        ChatProjectRequest request = new ChatProjectRequest();
+        request.setName("Tenant project");
+        ArgumentCaptor<ChatProject> captor = ArgumentCaptor.forClass(ChatProject.class);
+
+        chatProjectService.createProject("alice", request);
+
+        verify(chatProjectMapper).insert(captor.capture());
+        assertThat(captor.getValue().getUserId()).isEqualTo(42L);
+    }
+
+    @Test
+    void projectListFiltersByImmutableTenantUserId() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new TenantPrincipal(42L, "alice", "N/A", List.of()), null, List.of()));
+        ArgumentCaptor<LambdaQueryWrapper<ChatProject>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(chatProjectMapper.selectList(captor.capture())).thenReturn(List.of());
+
+        chatProjectService.listUserProjects("alice");
+
+        assertThat(captor.getValue().getSqlSegment()).contains("user_id").doesNotContain("username");
     }
 }

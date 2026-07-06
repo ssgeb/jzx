@@ -10,11 +10,20 @@ import com.ruanzhu.doorhandlecatch.entity.ChatSession;
 import com.ruanzhu.doorhandlecatch.mapper.ChatMessageMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatPendingActionMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatSessionMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.Collections;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,6 +34,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ChatSessionServiceImplTest {
+
+    @BeforeAll
+    static void initMetadata() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), ChatSession.class);
+    }
 
     private ChatSessionMapper chatSessionMapper;
     private ChatMessageMapper chatMessageMapper;
@@ -61,6 +75,33 @@ class ChatSessionServiceImplTest {
         assertThat(response.getSessionId()).startsWith("sess_admin_");
         verify(chatSessionMapper).insert(any(ChatSession.class));
         verify(chatMessageMapper).insert(any(ChatMessage.class));
+    }
+
+    @Test
+    void createdSessionStoresImmutableTenantUserId() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new TenantPrincipal(42L, "alice", "N/A", List.of()), null, List.of()));
+        when(chatMessageMapper.findBySessionId(anyString())).thenReturn(Collections.emptyList());
+        ArgumentCaptor<ChatSession> captor = ArgumentCaptor.forClass(ChatSession.class);
+
+        chatSessionService.createSession("alice");
+
+        verify(chatSessionMapper).insert(captor.capture());
+        assertThat(captor.getValue().getUserId()).isEqualTo(42L);
+    }
+
+    @Test
+    void sessionListFiltersByImmutableTenantUserId() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new TenantPrincipal(42L, "alice", "N/A", List.of()), null, List.of()));
+        ArgumentCaptor<LambdaQueryWrapper<ChatSession>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(chatSessionMapper.selectList(captor.capture())).thenReturn(Collections.emptyList());
+
+        chatSessionService.listUserSessions("alice");
+
+        assertThat(captor.getValue().getSqlSegment()).contains("user_id").doesNotContain("username");
     }
 
     @Test

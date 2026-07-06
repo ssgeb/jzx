@@ -21,6 +21,9 @@ public class ChatSession {
     @TableField("username")
     private String username;
 
+    @TableField("user_id")
+    private Long userId;
+
     @TableField("title")
     private String title;
 
