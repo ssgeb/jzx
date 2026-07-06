@@ -83,14 +83,18 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         ChatProject project = getProjectOwnedByUser(username, projectId);
 
         // 将项目中的会话移出项目
-        List<ChatSession> sessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getProjectId, projectId)
-                .eq(ChatSession::getUsername, username));
+        LambdaQueryWrapper<ChatSession> sessionQuery = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getProjectId, projectId);
+        Long userId = currentUserId();
+        if (userId != null) sessionQuery.eq(ChatSession::getUserId, userId);
+        else sessionQuery.eq(ChatSession::getUsername, username);
+        List<ChatSession> sessions = chatSessionMapper.selectList(sessionQuery);
 
         for (ChatSession session : sessions) {
-            if (!username.equals(session.getUsername())) {
-                continue;
-            }
+            boolean owned = userId != null
+                    ? userId.equals(session.getUserId())
+                    : username.equals(session.getUsername());
+            if (!owned) continue;
             session.setProjectId(null);
             session.setUpdatedAt(LocalDateTime.now());
             chatSessionMapper.updateById(session);
@@ -102,17 +106,15 @@ public class ChatProjectServiceImpl implements ChatProjectService {
 
     @Override
     public void moveSessionToProject(String username, String sessionId, String projectId) {
-        ChatSession session = chatSessionMapper.selectOne(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getSessionId, sessionId)
-                .last("limit 1"));
+        LambdaQueryWrapper<ChatSession> query = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getSessionId, sessionId);
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatSession::getUserId, userId);
+        else query.eq(ChatSession::getUsername, username);
+        ChatSession session = chatSessionMapper.selectOne(query.last("limit 1"));
 
         if (session == null) {
             throw new BusinessException(404, "会话不存在");
-        }
-
-        // 校验会话属于当前用户
-        if (!username.equals(session.getUsername())) {
-            throw new BusinessException(403, "无权操作此会话");
         }
 
         if (projectId != null) {
@@ -159,10 +161,11 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         response.setUpdatedAt(project.getUpdatedAt() == null ? null : project.getUpdatedAt().format(TIME_FORMATTER));
 
         // 统计项目中的会话数
-        Long count = chatSessionMapper.selectCount(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getProjectId, project.getProjectId())
-                .eq(ChatSession::getUsername, project.getUsername())
-                .eq(ChatSession::getStatus, "ACTIVE"));
+        LambdaQueryWrapper<ChatSession> countQuery = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getProjectId, project.getProjectId());
+        if (project.getUserId() != null) countQuery.eq(ChatSession::getUserId, project.getUserId());
+        else countQuery.eq(ChatSession::getUsername, project.getUsername());
+        Long count = chatSessionMapper.selectCount(countQuery.eq(ChatSession::getStatus, "ACTIVE"));
         response.setSessionCount(count != null ? count.intValue() : 0);
 
         return response;

@@ -17,6 +17,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -77,6 +78,11 @@ class ChatSessionServiceImplTest {
         verify(chatMessageMapper).insert(any(ChatMessage.class));
     }
 
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
     void createdSessionStoresImmutableTenantUserId() {
         SecurityContextHolder.getContext().setAuthentication(
@@ -100,6 +106,24 @@ class ChatSessionServiceImplTest {
         when(chatSessionMapper.selectList(captor.capture())).thenReturn(Collections.emptyList());
 
         chatSessionService.listUserSessions("alice");
+
+        assertThat(captor.getValue().getSqlSegment()).contains("user_id").doesNotContain("username");
+    }
+
+    @Test
+    void activeSessionLookupFiltersByImmutableTenantUserId() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new TenantPrincipal(42L, "alice", "N/A", List.of()), null, List.of()));
+        ArgumentCaptor<LambdaQueryWrapper<ChatSession>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        ChatSession active = new ChatSession();
+        active.setSessionId("sess_alice_001");
+        active.setUserId(42L);
+        active.setUsername("alice");
+        when(chatSessionMapper.selectList(captor.capture())).thenReturn(List.of(active));
+        when(chatMessageMapper.findBySessionId(active.getSessionId())).thenReturn(List.of());
+
+        chatSessionService.getOrCreateActiveSession("alice");
 
         assertThat(captor.getValue().getSqlSegment()).contains("user_id").doesNotContain("username");
     }

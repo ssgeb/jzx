@@ -10,6 +10,8 @@ import com.ruanzhu.doorhandlecatch.dto.chat.ChatMessageResponse;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatPendingActionPayload;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatSendMessageRequest;
 import com.ruanzhu.doorhandlecatch.entity.ChatPendingAction;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.ContextBuilder;
 import com.ruanzhu.doorhandlecatch.service.DeepSeekClient;
@@ -67,6 +69,8 @@ class AgentOrchestratorServiceImplTest {
                 Runnable::run,
                 new ChatAssistantProperties()
         );
+        SecurityContextHolder.getContext().setAuthentication(
+                authentication(1L, "admin"));
     }
 
     @AfterEach
@@ -90,10 +94,7 @@ class AgentOrchestratorServiceImplTest {
                 new ChatAssistantProperties()
         );
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        "alice",
-                        "N/A",
-                        List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
+                authentication(42L, "alice"));
         ChatSendMessageRequest request = new ChatSendMessageRequest();
         request.setSessionId("sess_alice_default");
         request.setContent("查询我的检测任务");
@@ -103,7 +104,9 @@ class AgentOrchestratorServiceImplTest {
             workerUsername.set(authentication == null ? null : authentication.getName());
             return null;
         }).when(chatSessionService).verifySessionOwner("alice", request.getSessionId());
-        Mockito.when(mem0Client.searchMemories("alice", request.getContent(), 5)).thenReturn(List.of());
+        Mockito.when(mem0Client.searchMemories(
+                new TenantContext(42L, "alice"), request.getSessionId(), request.getContent(), 5))
+                .thenReturn(List.of());
         AgentState result = AgentState.create(request.getSessionId(), request.getContent(), "alice")
                 .set(AgentState.KEY_RESULT_CONTENT, "查询完成")
                 .set(AgentState.KEY_RESULT_TYPE, "TEXT")
@@ -239,7 +242,11 @@ class AgentOrchestratorServiceImplTest {
 
         Mockito.when(ragKnowledgeService.retrieveContext(request.getContent()))
                 .thenReturn("[系统知识库检索结果]\n- 来源：常见问题\n业务预置数据导入");
-        Mockito.when(mem0Client.searchMemories(Mockito.eq("admin"), Mockito.eq(request.getContent()), Mockito.anyInt()))
+        Mockito.when(mem0Client.searchMemories(
+                        Mockito.eq(new TenantContext(1L, "admin")),
+                        Mockito.eq(request.getSessionId()),
+                        Mockito.eq(request.getContent()),
+                        Mockito.anyInt()))
                 .thenReturn(List.of());
 
         AgentState result = AgentState.create(request.getSessionId(), request.getContent(), "admin");
@@ -265,6 +272,8 @@ class AgentOrchestratorServiceImplTest {
         ChatMessageResponse actual = orchestratorService.handleUserMessage("admin", request);
 
         assertThat(actual.getContent()).contains("来源：系统知识库/用户手册");
+        Mockito.verify(mem0Client).searchMemories(
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getContent(), 5);
         Mockito.verify(chatSessionService).appendAssistantMessage(
                 Mockito.eq(request.getSessionId()),
                 Mockito.contains("来源：系统知识库/用户手册"),
@@ -272,6 +281,15 @@ class AgentOrchestratorServiceImplTest {
                 Mockito.eq("OPS_QUERY"),
                 Mockito.isNull()
         );
+    }
+
+    private static UsernamePasswordAuthenticationToken authentication(Long userId, String username) {
+        TenantPrincipal principal = new TenantPrincipal(
+                userId,
+                username,
+                "N/A",
+                List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")));
+        return new UsernamePasswordAuthenticationToken(principal, "N/A", principal.getAuthorities());
     }
 
     @Test

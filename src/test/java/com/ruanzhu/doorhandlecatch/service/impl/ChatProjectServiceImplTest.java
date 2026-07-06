@@ -12,6 +12,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -30,6 +31,7 @@ class ChatProjectServiceImplTest {
     @BeforeAll
     static void initMetadata() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), ChatProject.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), ChatSession.class);
     }
 
     private ChatProjectMapper chatProjectMapper;
@@ -71,6 +73,11 @@ class ChatProjectServiceImplTest {
         verify(chatProjectMapper).deleteById(10L);
     }
 
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
     void createdProjectStoresImmutableTenantUserId() {
         SecurityContextHolder.getContext().setAuthentication(
@@ -95,6 +102,23 @@ class ChatProjectServiceImplTest {
         when(chatProjectMapper.selectList(captor.capture())).thenReturn(List.of());
 
         chatProjectService.listUserProjects("alice");
+
+        assertThat(captor.getValue().getSqlSegment()).contains("user_id").doesNotContain("username");
+    }
+
+    @Test
+    void movingSessionFiltersByImmutableTenantUserId() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        new TenantPrincipal(42L, "alice", "N/A", List.of()), null, List.of()));
+        ChatSession session = new ChatSession();
+        session.setSessionId("sess_alice_001");
+        session.setUserId(42L);
+        session.setUsername("alice");
+        ArgumentCaptor<LambdaQueryWrapper<ChatSession>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(chatSessionMapper.selectOne(captor.capture())).thenReturn(session);
+
+        chatProjectService.moveSessionToProject("alice", session.getSessionId(), null);
 
         assertThat(captor.getValue().getSqlSegment()).contains("user_id").doesNotContain("username");
     }

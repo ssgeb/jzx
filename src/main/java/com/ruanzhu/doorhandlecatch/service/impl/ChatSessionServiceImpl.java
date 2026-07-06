@@ -46,8 +46,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     @Override
     public ChatSessionResponse getOrCreateActiveSession(String username) {
         // 优先查找最近的 ACTIVE 会话
-        List<ChatSession> activeSessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getUsername, username)
+        LambdaQueryWrapper<ChatSession> activeQuery = new LambdaQueryWrapper<>();
+        Long userId = currentUserId();
+        if (userId != null) activeQuery.eq(ChatSession::getUserId, userId);
+        else activeQuery.eq(ChatSession::getUsername, username);
+        List<ChatSession> activeSessions = chatSessionMapper.selectList(activeQuery
                 .eq(ChatSession::getStatus, "ACTIVE")
                 .orderByDesc(ChatSession::getUpdatedAt)
                 .last("limit 1"));
@@ -57,9 +60,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
 
         // 检查默认会话是否存在（向后兼容）
         String defaultId = buildDefaultSessionId(username);
-        ChatSession defaultSession = chatSessionMapper.selectOne(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getSessionId, defaultId)
-                .last("limit 1"));
+        LambdaQueryWrapper<ChatSession> defaultQuery = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getSessionId, defaultId);
+        if (userId != null) defaultQuery.eq(ChatSession::getUserId, userId);
+        else defaultQuery.eq(ChatSession::getUsername, username);
+        ChatSession defaultSession = chatSessionMapper.selectOne(defaultQuery.last("limit 1"));
         if (defaultSession != null) {
             defaultSession.setStatus("ACTIVE");
             defaultSession.setUpdatedAt(LocalDateTime.now());
