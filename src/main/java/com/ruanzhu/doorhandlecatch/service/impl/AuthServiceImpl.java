@@ -32,12 +32,12 @@ public class AuthServiceImpl implements AuthService {
             );
 
             UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-            String token = jwtUtil.generateToken(userDetails.getUsername());
-            
             // 获取用户详细信息
             User user = userMapper.findByUsername(userDetails.getUsername());
+            String token = jwtUtil.generateToken(user.getId(), user.getUsername());
 
             LoginResponse response = new LoginResponse();
+            response.setUserId(user.getId());
             response.setToken(token);
             response.setUsername(user.getUsername());
             response.setEmail(user.getEmail());

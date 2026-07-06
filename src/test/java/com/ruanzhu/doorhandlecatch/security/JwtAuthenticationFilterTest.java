@@ -9,7 +9,6 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 
 import java.util.List;
@@ -31,9 +30,10 @@ class JwtAuthenticationFilterTest {
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
         JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtUtil, userDetailsService, new ObjectMapper());
         when(jwtUtil.getUsernameFromToken("cookie-token")).thenReturn("alice");
+        when(jwtUtil.getUserIdFromToken("cookie-token")).thenReturn(42L);
         when(jwtUtil.validateToken("cookie-token")).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(
-                new User("alice", "N/A", List.of())
+                new TenantPrincipal(42L, "alice", "N/A", List.of())
         );
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/files/images/batch/img.jpg");
@@ -45,6 +45,9 @@ class JwtAuthenticationFilterTest {
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                .isInstanceOf(TenantPrincipal.class)
+                .extracting("userId").isEqualTo(42L);
     }
 
     @Test
@@ -53,9 +56,10 @@ class JwtAuthenticationFilterTest {
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
         JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtUtil, userDetailsService, new ObjectMapper());
         when(jwtUtil.getUsernameFromToken("header-token")).thenReturn("alice");
+        when(jwtUtil.getUserIdFromToken("header-token")).thenReturn(42L);
         when(jwtUtil.validateToken("header-token")).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(
-                new User("alice", "N/A", List.of())
+                new TenantPrincipal(42L, "alice", "N/A", List.of())
         );
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/check");
@@ -67,5 +71,26 @@ class JwtAuthenticationFilterTest {
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
+    }
+
+    @Test
+    void rejectsTokenWhenImmutableUserIdDoesNotMatchLoadedUser() throws Exception {
+        JwtUtil jwtUtil = mock(JwtUtil.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtUtil, userDetailsService, new ObjectMapper());
+        when(jwtUtil.getUsernameFromToken("token")).thenReturn("alice");
+        when(jwtUtil.getUserIdFromToken("token")).thenReturn(99L);
+        when(jwtUtil.validateToken("token")).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice"))
+                .thenReturn(new TenantPrincipal(42L, "alice", "N/A", List.of()));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/check");
+        request.setServletPath("/api/auth/check");
+        request.addHeader("Authorization", "Bearer token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 }

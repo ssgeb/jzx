@@ -49,6 +49,15 @@ public class JwtUtil {
         return createToken(claims, username);
     }
 
+    public String generateToken(Long userId, String username) {
+        if (userId == null || userId <= 0) {
+            throw new IllegalArgumentException("userId must be positive");
+        }
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("uid", userId);
+        return createToken(claims, username);
+    }
+
     private String createToken(Map<String, Object> claims, String subject) {
         return Jwts.builder()
                 .setClaims(claims)
@@ -73,6 +82,23 @@ public class JwtUtil {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public Long getUserIdFromToken(String token) {
+        try {
+            Object value = parseClaims(token).get("uid");
+            return value instanceof Number number ? number.longValue() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Claims parseClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     public boolean validateToken(String token) {

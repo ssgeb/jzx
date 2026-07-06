@@ -2,6 +2,7 @@ package com.ruanzhu.doorhandlecatch.service;
 
 import com.ruanzhu.doorhandlecatch.entity.User;
 import com.ruanzhu.doorhandlecatch.mapper.UserMapper;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -24,7 +25,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         }
         
         String role = "ADMIN".equalsIgnoreCase(user.getRole()) ? "ADMIN" : "OPERATOR";
-        return new org.springframework.security.core.userdetails.User(
+        return new TenantPrincipal(
+            user.getId(),
             user.getUsername(),
             user.getPassword(),
             List.of(new SimpleGrantedAuthority("ROLE_" + role))

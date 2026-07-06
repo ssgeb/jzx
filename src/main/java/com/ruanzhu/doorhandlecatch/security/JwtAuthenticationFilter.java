@@ -60,8 +60,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             String username = jwtUtil.getUsernameFromToken(jwt);
+            Long userId = jwtUtil.getUserIdFromToken(jwt);
 
-            if (username == null) {
+            if (username == null || userId == null) {
                 log.warn("JWT 令牌无效，无法解析用户名");
                 handleTokenInvalid(response);
                 return;
@@ -73,7 +74,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
                 log.debug("加载用户详情成功: {}", username);
 
-                if (jwtUtil.validateToken(jwt)) {
+                boolean tenantMatches = userDetails instanceof TenantPrincipal principal
+                        && userId.equals(principal.userId());
+                if (jwtUtil.validateToken(jwt) && tenantMatches) {
                     log.debug("令牌有效，建立认证上下文");
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails,
@@ -84,8 +87,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                     log.debug("认证上下文已写入: {}", username);
                 } else {
-                    log.warn("令牌已过期或无效: {}", username);
-                    handleTokenExpired(response);
+                    log.warn("令牌已过期、无效或租户不匹配: {}", username);
+                    handleTokenInvalid(response);
                     return;
                 }
             }
