@@ -16,6 +16,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -139,6 +141,17 @@ class ChatSessionServiceImplTest {
         verify(chatMessageMapper).insert(captor.capture());
         assertThat(captor.getValue().getSessionId()).isEqualTo("sess_admin_default");
         assertThat(captor.getValue().getRole()).isEqualTo("assistant");
+    }
+
+    @Test
+    void shouldRejectMessageWriteWhenSessionDoesNotBelongToTenant() {
+        TenantContext tenant = new TenantContext(42L, "alice");
+        when(chatSessionMapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> chatSessionService.appendUserMessage(tenant, "sess_other", "hello"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("会话不存在");
+        verify(chatMessageMapper, never()).insert(any(ChatMessage.class));
     }
 
     @Test
