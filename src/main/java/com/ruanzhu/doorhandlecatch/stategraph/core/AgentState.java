@@ -1,5 +1,7 @@
 package com.ruanzhu.doorhandlecatch.stategraph.core;
 
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +17,7 @@ public class AgentState {
     public static final String KEY_THREAD_ID = "thread_id";
     public static final String KEY_USER_INPUT = "user_input";
     public static final String KEY_USERNAME = "username";
+    public static final String KEY_TENANT_USER_ID = "tenant_user_id";
     public static final String KEY_CURRENT_NODE = "current_node";
     public static final String KEY_NEXT_NODE = "next_node";
     public static final String KEY_ROUTE_DECISION = "route_decision";
@@ -90,6 +93,23 @@ public class AgentState {
             try { return Integer.parseInt(s); } catch (NumberFormatException ignored) {}
         }
         return null;
+    }
+
+    public Long getLong(String key) {
+        Object value = data.get(key);
+        if (value instanceof Number number) return number.longValue();
+        if (value instanceof String text) {
+            try { return Long.parseLong(text); } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    public TenantContext requireTenantContext() {
+        Long userId = getLong(KEY_TENANT_USER_ID);
+        if (userId == null) {
+            throw new StateGraphException("AgentState 缺少租户用户 ID");
+        }
+        return new TenantContext(userId, getString(KEY_USERNAME));
     }
 
     public Boolean getBool(String key) {

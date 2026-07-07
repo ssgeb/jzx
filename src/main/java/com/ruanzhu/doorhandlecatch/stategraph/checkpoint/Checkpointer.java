@@ -1,6 +1,7 @@
 package com.ruanzhu.doorhandlecatch.stategraph.checkpoint;
 
 import com.ruanzhu.doorhandlecatch.stategraph.core.AgentState;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 
 /**
  * StateGraph 持久化接口。
@@ -9,8 +10,11 @@ import com.ruanzhu.doorhandlecatch.stategraph.core.AgentState;
 public interface Checkpointer {
 
     void save(String threadId, AgentState state);
+    void save(TenantContext tenant, String threadId, AgentState state);
 
     AgentState load(String threadId);
+    AgentState load(TenantContext tenant, String threadId);
 
     void delete(String threadId);
+    void delete(TenantContext tenant, String threadId);
 }

@@ -2,6 +2,7 @@ package com.ruanzhu.doorhandlecatch.stategraph.checkpoint;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatSessionMapper;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.stategraph.core.AgentState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,5 +63,20 @@ class MySqlCheckpointerTest {
         checkpointer.delete("sess_1");
 
         verify(chatSessionMapper).clearCheckpoint("sess_1");
+    }
+
+    @Test
+    void shouldSaveCheckpointWithTenantUserId() {
+        TenantContext tenant = new TenantContext(42L, "alice");
+        AgentState state = AgentState.create("sess_1", "hello", "alice")
+                .set(AgentState.KEY_TENANT_USER_ID, 42L);
+        when(chatSessionMapper.updateCheckpointForTenant(
+                eq(42L), eq("sess_1"), Mockito.anyString(), Mockito.isNull(), Mockito.isNull()))
+                .thenReturn(1);
+
+        checkpointer.save(tenant, "sess_1", state);
+
+        verify(chatSessionMapper).updateCheckpointForTenant(
+                eq(42L), eq("sess_1"), Mockito.anyString(), Mockito.isNull(), Mockito.isNull());
     }
 }
