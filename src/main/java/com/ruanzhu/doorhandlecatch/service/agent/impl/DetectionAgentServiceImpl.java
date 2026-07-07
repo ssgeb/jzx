@@ -22,6 +22,7 @@ import com.ruanzhu.doorhandlecatch.service.DetectionTaskService;
 import com.ruanzhu.doorhandlecatch.service.DetectionUploadAsyncService;
 import com.ruanzhu.doorhandlecatch.service.OssStorageService;
 import com.ruanzhu.doorhandlecatch.service.agent.DetectionAgentService;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -100,6 +101,16 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
     @Override
     public AgentExecutionResult executeConfirmedAction(String userPrompt, String username, String sessionId) {
+        return executeConfirmedActionInternal(userPrompt, username, null, sessionId);
+    }
+
+    @Override
+    public AgentExecutionResult executeConfirmedAction(String userPrompt, TenantContext tenant, String sessionId) {
+        return executeConfirmedActionInternal(userPrompt, tenant.username(), tenant, sessionId);
+    }
+
+    private AgentExecutionResult executeConfirmedActionInternal(String userPrompt, String username,
+                                                                TenantContext tenant, String sessionId) {
         QualityDispositionAction qualityAction = detectQualityDispositionAction(userPrompt);
         if (qualityAction != null) {
             return executeQualityDispositionAction(qualityAction);
@@ -118,7 +129,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
         // 2. 有文件夹路径 → 走上传流程
         if (folderPath != null && !folderPath.isBlank()) {
-            return executeUploadFlow(folderPath, userPrompt, sessionId);
+            return executeUploadFlow(folderPath, userPrompt, tenant, sessionId);
         }
 
         // 3. 没有文件夹路径 → 尝试识别为"开始检测"
@@ -163,7 +174,8 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
     }
 
     /** 上传流程：扫描文件夹 → 创建任务 → 异步上传 + 自动触发检测 */
-    private AgentExecutionResult executeUploadFlow(String folderPath, String userPrompt, String sessionId) {
+    private AgentExecutionResult executeUploadFlow(String folderPath, String userPrompt,
+                                                   TenantContext tenant, String sessionId) {
         Path folder;
         try {
             folder = validateAgentScanPath(Path.of(folderPath.trim()));
@@ -243,7 +255,11 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         log.info("DetectionAgent: 创建任务成功 taskId={}, workflowUuid={}, 文件数={}",
                 createResp.getTaskId(), createResp.getWorkflowUuid(), files.size());
 
-        uploadAsyncService.uploadAndConfirm(createResp, files, folder, sessionId);
+        if (tenant == null) {
+            uploadAsyncService.uploadAndConfirm(createResp, files, folder, sessionId);
+        } else {
+            uploadAsyncService.uploadAndConfirm(tenant, createResp, files, folder, sessionId);
+        }
 
         String msg = "已创建检测任务「" + createResp.getTaskId() + "」，共 " + files.size()
                 + " 张图片，正在后台上传到 OSS，上传完成后将自动开始检测，请稍候…\n\n"

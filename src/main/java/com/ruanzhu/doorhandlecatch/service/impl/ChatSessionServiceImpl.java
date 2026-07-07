@@ -331,6 +331,17 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         requireOwnedSession(username, sessionId);
     }
 
+    @Override
+    public TenantContext resolveTenantForSystemCallback(String sessionId) {
+        ChatSession session = chatSessionMapper.selectOne(new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getSessionId, sessionId)
+                .last("limit 1"));
+        if (session == null || session.getUserId() == null) {
+            throw new BusinessException(404, "会话不存在");
+        }
+        return new TenantContext(session.getUserId(), session.getUsername());
+    }
+
     private ChatSession requireOwnedSession(String username, String sessionId) {
         LambdaQueryWrapper<ChatSession> query = new LambdaQueryWrapper<ChatSession>()
                 .eq(ChatSession::getSessionId, sessionId);

@@ -6,6 +6,7 @@ import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadFileRequest;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadUrlItem;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -55,6 +56,7 @@ class DetectionUploadAsyncServiceTest {
         when(detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         service.uploadAndConfirm(
+                new TenantContext(42L, "alice"),
                 createResponse("det_upload_fail", "missing.jpg", "detection/task/Original/missing.jpg"),
                 List.of(createFileRequest("missing.jpg")),
                 tempDir,
@@ -71,7 +73,9 @@ class DetectionUploadAsyncServiceTest {
         assertEquals(0, updatedTask.getTotalImages());
         assertEquals("图片上传全部失败，未触发检测调度", updatedTask.getErrorMessage());
         verify(detectionTaskDispatchService, never()).dispatchTaskAsync(any());
-        verify(chatSessionService).appendAssistantMessage(eq("session_1"), any(), eq("TEXT"), eq("DETECTION_ACTION"), eq(null));
+        verify(chatSessionService).appendAssistantMessage(
+                eq(new TenantContext(42L, "alice")), eq("session_1"), any(),
+                eq("TEXT"), eq("DETECTION_ACTION"), eq(null));
     }
 
     @Test

@@ -63,6 +63,8 @@ public interface ChatSessionService {
 
     void verifySessionOwner(String username, String sessionId);
 
+    TenantContext resolveTenantForSystemCallback(String sessionId);
+
     void saveState(String sessionId, String stateJson);
     void saveState(TenantContext tenant, String sessionId, String stateJson);
 

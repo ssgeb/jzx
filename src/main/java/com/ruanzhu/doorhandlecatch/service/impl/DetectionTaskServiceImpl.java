@@ -34,6 +34,7 @@ import com.ruanzhu.doorhandlecatch.entity.ModelInfo;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ModelInfoMapper;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskService;
 import com.ruanzhu.doorhandlecatch.service.ModelService;
@@ -924,7 +925,9 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
                     + "- 失败：" + (task.getFailedImages() != null ? task.getFailedImages() : 0) + "\n\n"
                     + "你可以输入「查看任务 " + task.getTaskId() + "」查看详情。";
 
-            chatSessionService.appendAssistantMessage(sessionId, msg, "TEXT", "DETECTION_ACTION", null);
+            TenantContext tenant = chatSessionService.resolveTenantForSystemCallback(sessionId);
+            chatSessionService.appendAssistantMessage(
+                    tenant, sessionId, msg, "TEXT", "DETECTION_ACTION", null);
             log.info("检测完成通知已发送: taskId={}, sessionId={}", task.getTaskId(), sessionId);
         } catch (Exception e) {
             log.error("发送检测完成通知失败: taskId={}, sessionId={}", task.getTaskId(), sessionId, e);
