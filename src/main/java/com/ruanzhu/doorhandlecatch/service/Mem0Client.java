@@ -44,10 +44,6 @@ public class Mem0Client {
     /**
      * 添加记忆
      */
-    public Map<String, Object> addMemory(String userId, String content, Map<String, Object> metadata) {
-        return addMemory(Map.of("user_id", userId), content, metadata);
-    }
-
     public Map<String, Object> addMemory(TenantContext tenant, String sessionId,
                                          String content, Map<String, Object> metadata) {
         return addMemory(buildScope(tenant, sessionId), content, metadata);
@@ -93,10 +89,6 @@ public class Mem0Client {
     /**
      * 搜索记忆
      */
-    public List<Map<String, Object>> searchMemories(String userId, String query, int topK) {
-        return searchMemories(Map.of("user_id", userId), query, topK);
-    }
-
     public List<Map<String, Object>> searchMemories(TenantContext tenant, String sessionId,
                                                      String query, int topK) {
         return searchMemories(buildScope(tenant, sessionId), query, topK);
@@ -212,11 +204,6 @@ public class Mem0Client {
     /**
      * 异步添加记忆（不阻塞主流程）
      */
-    @Async
-    public void addMemoryAsync(String userId, String content, Map<String, Object> metadata) {
-        addMemory(userId, content, metadata);
-    }
-
     @Async
     public void addMemoryAsync(TenantContext tenant, String sessionId, String content,
                                Map<String, Object> metadata) {

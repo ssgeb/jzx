@@ -9,12 +9,9 @@ import com.ruanzhu.doorhandlecatch.security.TenantContext;
  */
 public interface Checkpointer {
 
-    void save(String threadId, AgentState state);
     void save(TenantContext tenant, String threadId, AgentState state);
 
-    AgentState load(String threadId);
     AgentState load(TenantContext tenant, String threadId);
 
-    void delete(String threadId);
     void delete(TenantContext tenant, String threadId);
 }

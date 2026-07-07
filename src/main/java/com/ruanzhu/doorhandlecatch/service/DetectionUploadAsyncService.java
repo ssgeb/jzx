@@ -168,21 +168,10 @@ public class DetectionUploadAsyncService {
         }
     }
 
-    public void uploadAndConfirm(CreateDetectionTaskResponse createResp,
-                                 List<DetectionUploadFileRequest> files,
-                                 Path folder, String sessionId) {
-        uploadAndConfirm(null, createResp, files, folder, sessionId);
-    }
-
     private void appendAssistantMessage(TenantContext tenant, String sessionId, String content,
                                         String messageType, String intent, String actionId) {
-        if (tenant != null) {
-            chatSessionService.appendAssistantMessage(
-                    tenant, sessionId, content, messageType, intent, actionId);
-        } else {
-            chatSessionService.appendAssistantMessage(
-                    sessionId, content, messageType, intent, actionId);
-        }
+        chatSessionService.appendAssistantMessage(
+                tenant, sessionId, content, messageType, intent, actionId);
     }
 
     private String validateUploadPlan(List<DetectionUploadFileRequest> files,

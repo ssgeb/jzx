@@ -132,11 +132,14 @@ class ChatSessionServiceImplTest {
 
     @Test
     void shouldAppendAssistantMessage() {
-        ChatMessage message = new ChatMessage();
-        message.setId(1L);
+        ChatSession session = new ChatSession();
+        session.setSessionId("sess_admin_default");
+        session.setUserId(1L);
+        when(chatSessionMapper.selectOne(any())).thenReturn(session);
 
         ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
-        chatSessionService.appendAssistantMessage("sess_admin_default", "测试消息", "TEXT", "TEST", null);
+        chatSessionService.appendAssistantMessage(
+                new TenantContext(1L, "admin"), "sess_admin_default", "测试消息", "TEXT", "TEST", null);
 
         verify(chatMessageMapper).insert(captor.capture());
         assertThat(captor.getValue().getSessionId()).isEqualTo("sess_admin_default");
@@ -179,12 +182,17 @@ class ChatSessionServiceImplTest {
 
     @Test
     void shouldMarkPendingActionBySessionAndActionId() {
+        ChatSession session = new ChatSession();
+        session.setSessionId("sess_admin_default");
+        session.setUserId(1L);
+        when(chatSessionMapper.selectOne(any())).thenReturn(session);
         ChatPendingAction action = new ChatPendingAction();
         action.setSessionId("sess_admin_default");
         action.setActionId("action-1");
         when(pendingActionMapper.selectOne(any())).thenReturn(action);
 
-        chatSessionService.markPendingActionStatus("sess_admin_default", "action-1", "CONFIRMED");
+        chatSessionService.markPendingActionStatus(
+                new TenantContext(1L, "admin"), "sess_admin_default", "action-1", "CONFIRMED");
 
         assertThat(action.getStatus()).isEqualTo("CONFIRMED");
         verify(pendingActionMapper).updateById(action);
@@ -192,12 +200,17 @@ class ChatSessionServiceImplTest {
 
     @Test
     void transitionsOnlyFromExpectedPendingStatus() {
+        ChatSession session = new ChatSession();
+        session.setSessionId("sess_admin_default");
+        session.setUserId(1L);
+        when(chatSessionMapper.selectOne(any())).thenReturn(session);
         when(pendingActionMapper.transitionStatus(
                 "sess_admin_default", "action-1", "PENDING", "EXECUTING", null))
                 .thenReturn(1);
 
         boolean claimed = chatSessionService.transitionPendingAction(
-                "sess_admin_default", "action-1", "PENDING", "EXECUTING", null);
+                new TenantContext(1L, "admin"), "sess_admin_default", "action-1",
+                "PENDING", "EXECUTING", null);
 
         assertThat(claimed).isTrue();
     }

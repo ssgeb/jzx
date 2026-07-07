@@ -94,6 +94,7 @@ class DetectionUploadAsyncServiceTest {
                 .build();
 
         service.uploadAndConfirm(
+                new TenantContext(42L, "alice"),
                 response,
                 List.of(createFileRequest("img001.jpg")),
                 tempDir,
@@ -111,7 +112,9 @@ class DetectionUploadAsyncServiceTest {
         assertEquals("上传地址列表不能为空", updatedTask.getErrorMessage());
         verify(ossStorageService, never()).putObject(any(), any(InputStream.class), anyLong(), any());
         verify(detectionTaskDispatchService, never()).dispatchTaskAsync(any());
-        verify(chatSessionService).appendAssistantMessage(eq("session_1"), any(), eq("TEXT"), eq("DETECTION_ACTION"), eq(null));
+        verify(chatSessionService).appendAssistantMessage(
+                eq(new TenantContext(42L, "alice")), eq("session_1"), any(),
+                eq("TEXT"), eq("DETECTION_ACTION"), eq(null));
     }
 
     @Test
@@ -130,6 +133,7 @@ class DetectionUploadAsyncServiceTest {
         );
 
         service.uploadAndConfirm(
+                new TenantContext(42L, "alice"),
                 response,
                 List.of(createFileRequest("img001.jpg")),
                 tempDir,
@@ -156,6 +160,7 @@ class DetectionUploadAsyncServiceTest {
         when(detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         service.uploadAndConfirm(
+                new TenantContext(42L, "alice"),
                 createResponse("det_upload_success", "img001.jpg", "detection/task/Original/img001.jpg"),
                 List.of(createFileRequest("img001.jpg")),
                 tempDir,
@@ -196,6 +201,7 @@ class DetectionUploadAsyncServiceTest {
         when(detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         service.uploadAndConfirm(
+                new TenantContext(42L, "alice"),
                 createResponse("det_relative_path", "img001.jpg", "detection/task/Original/camera-b/img001.jpg"),
                 List.of(createFileRequest("img001.jpg", "camera-b/img001.jpg")),
                 tempDir,
@@ -242,6 +248,7 @@ class DetectionUploadAsyncServiceTest {
                 .build();
 
         service.uploadAndConfirm(
+                new TenantContext(42L, "alice"),
                 response,
                 List.of(createFileRequest("img001.jpg"), createFileRequest("img002.jpg")),
                 tempDir,

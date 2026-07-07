@@ -98,30 +98,6 @@ public class CompiledGraph implements Node {
      * @param threadId 会话 ID
      * @param resumeValues 恢复时注入的附加值（如 confirmed=true）
      */
-    public AgentState resume(String threadId, Map<String, Object> resumeValues) {
-        if (checkpointer == null) {
-            throw new StateGraphException("无法恢复：未配置 Checkpointer");
-        }
-        AgentState state = checkpointer.load(threadId);
-        if (state == null) {
-            throw new StateGraphException("无法恢复：未找到 thread_id=" + threadId + " 的 checkpoint");
-        }
-        state.setAll(resumeValues);
-        log.info("StateGraph.resume: thread_id={}, resume node={}", threadId, state.getString(AgentState.KEY_CURRENT_NODE));
-
-        // 从当前节点继续执行（需恢复后重新进入该节点，比如 HumanConfirmNode）
-        String resumeNode = state.getString(AgentState.KEY_CURRENT_NODE);
-        if (resumeNode == null) {
-            resumeNode = entryPoint;
-        }
-        AgentState result = runLoop(state, resumeNode);
-        runListener.onRunFinished(result);
-        log.info("StateGraph 恢复执行完毕: thread_id={}, exit_reason={}",
-                result.getString(AgentState.KEY_THREAD_ID),
-                result.getString(AgentState.KEY_EXIT_REASON));
-        return result;
-    }
-
     public AgentState resume(TenantContext tenant, String threadId, Map<String, Object> resumeValues) {
         if (checkpointer == null) {
             throw new StateGraphException("无法恢复：未配置 Checkpointer");

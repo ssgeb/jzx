@@ -4,9 +4,22 @@ import com.ruanzhu.doorhandlecatch.security.SensitiveDataSanitizer;
 import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.Set;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class Mem0ClientTest {
+    @Test
+    void exposesNoStringScopedMemoryOperations() {
+        assertThat(Arrays.stream(Mem0Client.class.getMethods())
+                .filter(method -> Set.of("addMemory", "addMemoryAsync", "searchMemories")
+                        .contains(method.getName()))
+                .filter(method -> method.getParameterCount() > 0)
+                .filter(method -> method.getParameterTypes()[0] == String.class))
+                .isEmpty();
+    }
+
     @Test
     void buildsNamespacedUserApplicationAndRunScope() {
         Mem0Client client = new Mem0Client(new SensitiveDataSanitizer());

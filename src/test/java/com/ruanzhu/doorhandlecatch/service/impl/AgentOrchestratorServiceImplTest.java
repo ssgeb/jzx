@@ -232,7 +232,7 @@ class AgentOrchestratorServiceImplTest {
                 .hasMessage("会话不存在");
 
         Mockito.verify(chatSessionService, Mockito.never())
-                .appendUserMessage(Mockito.anyString(), Mockito.anyString());
+                .appendUserMessage(Mockito.any(TenantContext.class), Mockito.anyString(), Mockito.anyString());
     }
 
     @Test

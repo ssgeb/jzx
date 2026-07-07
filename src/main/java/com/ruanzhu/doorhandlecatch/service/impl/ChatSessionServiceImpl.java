@@ -182,7 +182,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         session.setCreatedAt(LocalDateTime.now());
         session.setUpdatedAt(LocalDateTime.now());
         chatSessionMapper.insert(session);
-        appendAssistantMessage(sessionId, "你好，我是系统智能助手。你可以直接告诉我想做检测、查设备、看报表，或者排查任务失败原因。", "TEXT", "GREETING", null);
+        saveMessage(sessionId, "assistant", "TEXT", "你好，我是系统智能助手。你可以直接告诉我想做检测、查设备、看报表，或者排查任务失败原因。", "GREETING", null);
         return buildSessionResponse(session, true);
     }
 
@@ -217,26 +217,16 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     }
 
     @Override
-    public ChatMessageResponse appendUserMessage(String sessionId, String content) {
-        return saveMessage(sessionId, "user", "TEXT", content, null, null);
-    }
-
-    @Override
     public ChatMessageResponse appendUserMessage(TenantContext tenant, String sessionId, String content) {
         requireOwnedSession(tenant, sessionId);
-        return appendUserMessage(sessionId, content);
-    }
-
-    @Override
-    public ChatMessageResponse appendAssistantMessage(String sessionId, String content, String messageType, String intent, String actionId) {
-        return saveMessage(sessionId, "assistant", messageType, content, intent, actionId);
+        return saveMessage(sessionId, "user", "TEXT", content, null, null);
     }
 
     @Override
     public ChatMessageResponse appendAssistantMessage(TenantContext tenant, String sessionId, String content,
                                                        String messageType, String intent, String actionId) {
         requireOwnedSession(tenant, sessionId);
-        return appendAssistantMessage(sessionId, content, messageType, intent, actionId);
+        return saveMessage(sessionId, "assistant", messageType, content, intent, actionId);
     }
 
     @Override
@@ -254,8 +244,8 @@ public class ChatSessionServiceImpl implements ChatSessionService {
                 .collect(Collectors.toList());
     }
 
-    @Override
-    public ChatPendingAction savePendingAction(String sessionId, String actionId, String actionType, ChatPendingActionPayload payload) {
+    private ChatPendingAction savePendingActionInternal(String sessionId, String actionId, String actionType,
+                                                        ChatPendingActionPayload payload) {
         ChatPendingAction action = new ChatPendingAction();
         action.setActionId(StringUtils.hasText(actionId) ? actionId : UUID.randomUUID().toString());
         action.setSessionId(sessionId);
@@ -271,11 +261,10 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     public ChatPendingAction savePendingAction(TenantContext tenant, String sessionId, String actionId,
                                                String actionType, ChatPendingActionPayload payload) {
         requireOwnedSession(tenant, sessionId);
-        return savePendingAction(sessionId, actionId, actionType, payload);
+        return savePendingActionInternal(sessionId, actionId, actionType, payload);
     }
 
-    @Override
-    public ChatPendingAction getPendingAction(String sessionId, String actionId) {
+    private ChatPendingAction getPendingActionInternal(String sessionId, String actionId) {
         ChatPendingAction action = chatPendingActionMapper.selectOne(new LambdaQueryWrapper<ChatPendingAction>()
                 .eq(ChatPendingAction::getSessionId, sessionId)
                 .eq(ChatPendingAction::getActionId, actionId)
@@ -289,11 +278,10 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     @Override
     public ChatPendingAction getPendingAction(TenantContext tenant, String sessionId, String actionId) {
         requireOwnedSession(tenant, sessionId);
-        return getPendingAction(sessionId, actionId);
+        return getPendingActionInternal(sessionId, actionId);
     }
 
-    @Override
-    public void markPendingActionStatus(String sessionId, String actionId, String status) {
+    private void markPendingActionStatusInternal(String sessionId, String actionId, String status) {
         ChatPendingAction action = chatPendingActionMapper.selectOne(new LambdaQueryWrapper<ChatPendingAction>()
                 .eq(ChatPendingAction::getSessionId, sessionId)
                 .eq(ChatPendingAction::getActionId, actionId)
@@ -309,12 +297,11 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     @Override
     public void markPendingActionStatus(TenantContext tenant, String sessionId, String actionId, String status) {
         requireOwnedSession(tenant, sessionId);
-        markPendingActionStatus(sessionId, actionId, status);
+        markPendingActionStatusInternal(sessionId, actionId, status);
     }
 
-    @Override
-    public boolean transitionPendingAction(String sessionId, String actionId, String expectedStatus,
-                                           String targetStatus, String errorMessage) {
+    private boolean transitionPendingActionInternal(String sessionId, String actionId, String expectedStatus,
+                                                    String targetStatus, String errorMessage) {
         return chatPendingActionMapper.transitionStatus(
                 sessionId, actionId, expectedStatus, targetStatus, errorMessage) == 1;
     }
@@ -323,7 +310,7 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     public boolean transitionPendingAction(TenantContext tenant, String sessionId, String actionId,
                                            String expectedStatus, String targetStatus, String errorMessage) {
         requireOwnedSession(tenant, sessionId);
-        return transitionPendingAction(sessionId, actionId, expectedStatus, targetStatus, errorMessage);
+        return transitionPendingActionInternal(sessionId, actionId, expectedStatus, targetStatus, errorMessage);
     }
 
     @Override
@@ -396,26 +383,24 @@ public class ChatSessionServiceImpl implements ChatSessionService {
         return response;
     }
 
-    @Override
-    public void saveState(String sessionId, String stateJson) {
+    private void saveStateInternal(String sessionId, String stateJson) {
         chatSessionMapper.updateCheckpoint(sessionId, stateJson, null, null);
     }
 
     @Override
     public void saveState(TenantContext tenant, String sessionId, String stateJson) {
         requireOwnedSession(tenant, sessionId);
-        saveState(sessionId, stateJson);
+        saveStateInternal(sessionId, stateJson);
     }
 
-    @Override
-    public String loadState(String sessionId) {
+    private String loadStateInternal(String sessionId) {
         return chatSessionMapper.selectStateJson(sessionId);
     }
 
     @Override
     public String loadState(TenantContext tenant, String sessionId) {
         requireOwnedSession(tenant, sessionId);
-        return loadState(sessionId);
+        return loadStateInternal(sessionId);
     }
 
     private String writeJson(Object value) {

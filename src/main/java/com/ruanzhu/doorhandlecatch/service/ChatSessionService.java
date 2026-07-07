@@ -37,27 +37,20 @@ public interface ChatSessionService {
     /** 置顶/取消置顶会话 */
     void togglePinSession(String username, String sessionId, boolean pinned);
 
-    ChatMessageResponse appendUserMessage(String sessionId, String content);
     ChatMessageResponse appendUserMessage(TenantContext tenant, String sessionId, String content);
 
-    ChatMessageResponse appendAssistantMessage(String sessionId, String content, String messageType, String intent, String actionId);
     ChatMessageResponse appendAssistantMessage(TenantContext tenant, String sessionId, String content,
                                                 String messageType, String intent, String actionId);
 
     List<ChatMessageResponse> listMessages(String username, String sessionId);
 
-    ChatPendingAction savePendingAction(String sessionId, String actionId, String actionType, ChatPendingActionPayload payload);
     ChatPendingAction savePendingAction(TenantContext tenant, String sessionId, String actionId,
                                         String actionType, ChatPendingActionPayload payload);
 
-    ChatPendingAction getPendingAction(String sessionId, String actionId);
     ChatPendingAction getPendingAction(TenantContext tenant, String sessionId, String actionId);
 
-    void markPendingActionStatus(String sessionId, String actionId, String status);
     void markPendingActionStatus(TenantContext tenant, String sessionId, String actionId, String status);
 
-    boolean transitionPendingAction(String sessionId, String actionId, String expectedStatus,
-                                    String targetStatus, String errorMessage);
     boolean transitionPendingAction(TenantContext tenant, String sessionId, String actionId,
                                     String expectedStatus, String targetStatus, String errorMessage);
 
@@ -65,9 +58,7 @@ public interface ChatSessionService {
 
     TenantContext resolveTenantForSystemCallback(String sessionId);
 
-    void saveState(String sessionId, String stateJson);
     void saveState(TenantContext tenant, String sessionId, String stateJson);
 
-    String loadState(String sessionId);
     String loadState(TenantContext tenant, String sessionId);
 }

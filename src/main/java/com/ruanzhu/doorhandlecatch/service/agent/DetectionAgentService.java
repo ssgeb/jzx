@@ -9,8 +9,6 @@ public interface DetectionAgentService {
 
     String previewAction(String userPrompt);
 
-    AgentExecutionResult executeConfirmedAction(String userPrompt, String username, String sessionId);
-
     AgentExecutionResult executeConfirmedAction(String userPrompt, TenantContext tenant, String sessionId);
 
     AgentExecutionResult answer(String userPrompt, String username);

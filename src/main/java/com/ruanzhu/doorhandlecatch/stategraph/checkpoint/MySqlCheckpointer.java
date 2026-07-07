@@ -25,24 +25,6 @@ public class MySqlCheckpointer implements Checkpointer {
     private final ObjectMapper objectMapper;
 
     @Override
-    public void save(String threadId, AgentState state) {
-        try {
-            String json = objectMapper.writeValueAsString(state.toMap());
-            int updated = chatSessionMapper.updateCheckpoint(
-                    threadId,
-                    json,
-                    state.getString(AgentState.KEY_CURRENT_NODE),
-                    state.getString(AgentState.KEY_EXIT_REASON)
-            );
-            if (updated == 0) {
-                log.warn("Checkpoint save 未更新任何行: thread_id={}", threadId);
-            }
-        } catch (JsonProcessingException e) {
-            throw new StateGraphException("Checkpoint 序列化失败", e, state);
-        }
-    }
-
-    @Override
     public void save(TenantContext tenant, String threadId, AgentState state) {
         try {
             String json = objectMapper.writeValueAsString(state.toMap());
@@ -59,27 +41,8 @@ public class MySqlCheckpointer implements Checkpointer {
     }
 
     @Override
-    public AgentState load(String threadId) {
-        String json = chatSessionMapper.selectStateJson(threadId);
-        if (json == null || json.isEmpty()) {
-            return null;
-        }
-        try {
-            Map<String, Object> map = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
-            return AgentState.fromMap(map);
-        } catch (JsonProcessingException e) {
-            throw new StateGraphException("Checkpoint 反序列化失败: thread_id=" + threadId, e);
-        }
-    }
-
-    @Override
     public AgentState load(TenantContext tenant, String threadId) {
         return deserialize(chatSessionMapper.selectStateJsonForTenant(tenant.userId(), threadId), threadId);
-    }
-
-    @Override
-    public void delete(String threadId) {
-        chatSessionMapper.clearCheckpoint(threadId);
     }
 
     @Override

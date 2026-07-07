@@ -100,11 +100,6 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
     }
 
     @Override
-    public AgentExecutionResult executeConfirmedAction(String userPrompt, String username, String sessionId) {
-        return executeConfirmedActionInternal(userPrompt, username, null, sessionId);
-    }
-
-    @Override
     public AgentExecutionResult executeConfirmedAction(String userPrompt, TenantContext tenant, String sessionId) {
         return executeConfirmedActionInternal(userPrompt, tenant.username(), tenant, sessionId);
     }
@@ -255,11 +250,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
         log.info("DetectionAgent: 创建任务成功 taskId={}, workflowUuid={}, 文件数={}",
                 createResp.getTaskId(), createResp.getWorkflowUuid(), files.size());
 
-        if (tenant == null) {
-            uploadAsyncService.uploadAndConfirm(createResp, files, folder, sessionId);
-        } else {
-            uploadAsyncService.uploadAndConfirm(tenant, createResp, files, folder, sessionId);
-        }
+        uploadAsyncService.uploadAndConfirm(tenant, createResp, files, folder, sessionId);
 
         String msg = "已创建检测任务「" + createResp.getTaskId() + "」，共 " + files.size()
                 + " 张图片，正在后台上传到 OSS，上传完成后将自动开始检测，请稍候…\n\n"
