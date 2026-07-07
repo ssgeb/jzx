@@ -6,6 +6,7 @@ import com.ruanzhu.doorhandlecatch.common.BusinessException;
 import com.ruanzhu.doorhandlecatch.dto.chat.AgentRouteDecision;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatPendingActionPayload;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.service.agent.DetectionAgentService;
 import com.ruanzhu.doorhandlecatch.service.agent.ReportAgentService;
 import com.ruanzhu.doorhandlecatch.service.agent.ResourceAgentService;
@@ -67,7 +68,8 @@ public class HumanConfirmNode implements Node {
         payload.setIntent(decision.getIntent());
         payload.setTargetAgent(decision.getTargetAgent());
 
-        chatSessionService.savePendingAction(sessionId, actionId, decision.getIntent(), payload);
+        TenantContext tenant = state.requireTenantContext();
+        chatSessionService.savePendingAction(tenant, sessionId, actionId, decision.getIntent(), payload);
 
         // 构建预览消息
         String preview = buildPreviewMessage(decision, userInput);

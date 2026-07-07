@@ -1,5 +1,6 @@
 package com.ruanzhu.doorhandlecatch.stategraph.core;
 
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.stategraph.checkpoint.Checkpointer;
 import lombok.extern.slf4j.Slf4j;
 
@@ -118,6 +119,23 @@ public class CompiledGraph implements Node {
         log.info("StateGraph 恢复执行完毕: thread_id={}, exit_reason={}",
                 result.getString(AgentState.KEY_THREAD_ID),
                 result.getString(AgentState.KEY_EXIT_REASON));
+        return result;
+    }
+
+    public AgentState resume(TenantContext tenant, String threadId, Map<String, Object> resumeValues) {
+        if (checkpointer == null) {
+            throw new StateGraphException("无法恢复：未配置 Checkpointer");
+        }
+        AgentState state = checkpointer.load(tenant, threadId);
+        if (state == null) {
+            throw new StateGraphException("无法恢复：未找到 thread_id=" + threadId + " 的 checkpoint");
+        }
+        state.set(AgentState.KEY_TENANT_USER_ID, tenant.userId());
+        state.set(AgentState.KEY_USERNAME, tenant.username());
+        state.setAll(resumeValues);
+        String resumeNode = state.getString(AgentState.KEY_CURRENT_NODE);
+        AgentState result = runLoop(state, resumeNode == null ? entryPoint : resumeNode);
+        runListener.onRunFinished(result);
         return result;
     }
 
@@ -343,7 +361,7 @@ public class CompiledGraph implements Node {
             return;
         }
         try {
-            checkpointer.save(state.getString(AgentState.KEY_THREAD_ID), state);
+            checkpointer.save(state.requireTenantContext(), state.getString(AgentState.KEY_THREAD_ID), state);
         } catch (Exception e) {
             log.warn("Checkpoint 保存失败: {}", e.getMessage());
         }
