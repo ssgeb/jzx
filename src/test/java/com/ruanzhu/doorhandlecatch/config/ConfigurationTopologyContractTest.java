@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -30,11 +31,6 @@ import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 class ConfigurationTopologyContractTest {
 
-    private static final Set<String> BASE_APPLICATION_CONFIG_NAMES = Set.of(
-            "application.yml",
-            "application.yaml",
-            "application.properties"
-    );
     private static final Path PROJECT_ROOT = locateProjectRoot();
     private static final Path MAIN_JAVA = PROJECT_ROOT.resolve("src/main/java");
     private static final Path APPLICATION_PACKAGE = MAIN_JAVA.resolve("com/ruanzhu/doorhandlecatch");
@@ -42,18 +38,19 @@ class ConfigurationTopologyContractTest {
     private static final Path APPLICATION_YAML = MAIN_RESOURCES.resolve("application.yml");
 
     @Test
-    void usesApplicationYamlAsTheOnlyBaseApplicationConfigurationFile() throws IOException {
-        List<String> baseApplicationConfigs;
-        try (Stream<Path> resources = Files.list(MAIN_RESOURCES)) {
-            baseApplicationConfigs = resources
+    void usesApplicationYamlAsTheOnlyApplicationConfigurationFile() throws IOException {
+        List<String> applicationConfigs;
+        try (Stream<Path> resources = Files.walk(MAIN_RESOURCES)) {
+            applicationConfigs = resources
                     .filter(Files::isRegularFile)
-                    .map(path -> path.getFileName().toString())
-                    .filter(BASE_APPLICATION_CONFIG_NAMES::contains)
+                    .filter(ConfigurationTopologyContractTest::isApplicationConfig)
+                    .map(MAIN_RESOURCES::relativize)
+                    .map(ConfigurationTopologyContractTest::normalizePath)
                     .sorted()
                     .toList();
         }
 
-        assertThat(baseApplicationConfigs).containsExactly("application.yml");
+        assertThat(applicationConfigs).containsExactly("application.yml");
     }
 
     @Test
@@ -79,10 +76,38 @@ class ConfigurationTopologyContractTest {
                 "mybatis-plus.global-config.enable-sql-runner"
         );
 
-        List<String> workaroundTokens = List.of(
-                "MybatisPlusAutoConfiguration",
-                "ddlApplicationRunner",
-                "enable-sql-runner"
+        List<JavaWorkaroundPattern> workaroundPatterns = List.of(
+                new JavaWorkaroundPattern(
+                        "MybatisPlusAutoConfiguration import",
+                        Pattern.compile(
+                                "(?m)^\\s*import\\s+com\\.baomidou\\.mybatisplus\\.autoconfigure"
+                                        + "\\.MybatisPlusAutoConfiguration\\s*;"
+                        )
+                ),
+                new JavaWorkaroundPattern(
+                        "MybatisPlusAutoConfiguration excluded from @SpringBootApplication",
+                        Pattern.compile(
+                                "(?ms)^\\s*@(?:org\\.springframework\\.boot\\.autoconfigure\\.)?"
+                                        + "SpringBootApplication\\s*\\([^)]*\\bexclude\\s*=\\s*"
+                                        + "(?:\\{[^}]*\\bMybatisPlusAutoConfiguration\\s*\\.\\s*class[^}]*}"
+                                        + "|\\bMybatisPlusAutoConfiguration\\s*\\.\\s*class)[^)]*\\)"
+                        )
+                ),
+                new JavaWorkaroundPattern(
+                        "ddlApplicationRunner method declaration",
+                        Pattern.compile(
+                                "(?m)^\\s*(?:(?:public|protected|private|static|final|synchronized|abstract|"
+                                        + "native|default)\\s+)*[\\w.$<>?,\\[\\]]+\\s+"
+                                        + "ddlApplicationRunner\\s*\\("
+                        )
+                ),
+                new JavaWorkaroundPattern(
+                        "enable-sql-runner system property assignment",
+                        Pattern.compile(
+                                "(?m)^\\s*System\\s*\\.\\s*setProperty\\s*\\(\\s*"
+                                        + "\"mybatis-plus\\.global-config\\.enable-sql-runner\"\\s*,"
+                        )
+                )
         );
         Map<Path, List<String>> workaroundsBySource = new LinkedHashMap<>();
         List<Path> javaSources;
@@ -93,9 +118,10 @@ class ConfigurationTopologyContractTest {
                     .toList();
         }
         for (Path javaSource : javaSources) {
-            String source = Files.readString(javaSource, UTF_8);
-            List<String> matchingTokens = workaroundTokens.stream()
-                    .filter(source::contains)
+            String sourceWithoutComments = removeJavaComments(Files.readString(javaSource, UTF_8));
+            List<String> matchingTokens = workaroundPatterns.stream()
+                    .filter(workaround -> workaround.pattern().matcher(sourceWithoutComments).find())
+                    .map(JavaWorkaroundPattern::description)
                     .toList();
             if (!matchingTokens.isEmpty()) {
                 workaroundsBySource.put(PROJECT_ROOT.relativize(javaSource), matchingTokens);
@@ -139,8 +165,12 @@ class ConfigurationTopologyContractTest {
                 "logging.config"
         );
         assertSoftly(softly -> {
-            softly.assertThat(MAIN_RESOURCES.resolve("logback-spring.xml")).doesNotExist();
-            softly.assertThat(MAIN_RESOURCES.resolve("logback.xml")).doesNotExist();
+            List.of(
+                    "logback-spring.xml",
+                    "logback.xml",
+                    "log4j2-spring.xml",
+                    "log4j2.xml"
+            ).forEach(fileName -> softly.assertThat(MAIN_RESOURCES.resolve(fileName)).doesNotExist());
             softly.assertThat(forbiddenPropertiesPresent)
                     .as("forbidden expanded application.yml property names")
                     .isEmpty();
@@ -154,6 +184,24 @@ class ConfigurationTopologyContractTest {
                 yaml.getObject(),
                 () -> "Unable to load YAML properties from " + APPLICATION_YAML
         );
+    }
+
+    private static boolean isApplicationConfig(Path path) {
+        String fileName = path.getFileName().toString();
+        return fileName.startsWith("application")
+                && (fileName.endsWith(".yml")
+                || fileName.endsWith(".yaml")
+                || fileName.endsWith(".properties"));
+    }
+
+    private static String normalizePath(Path path) {
+        return path.toString().replace('\\', '/');
+    }
+
+    private static String removeJavaComments(String source) {
+        return source
+                .replaceAll("(?s)/\\*.*?\\*/", "")
+                .replaceAll("(?m)//.*$", "");
     }
 
     private static Set<String> propertyNames(Properties properties) {
@@ -182,8 +230,24 @@ class ConfigurationTopologyContractTest {
             document = factory.newDocumentBuilder().parse(input);
         }
 
-        Element dependenciesElement = directChild(document.getDocumentElement(), "dependencies");
         Set<String> dependencies = new LinkedHashSet<>();
+        Element project = document.getDocumentElement();
+        collectDependencies(project, dependencies);
+        for (Element profiles : directChildren(project, "profiles")) {
+            for (Element profile : directChildren(profiles, "profile")) {
+                collectDependencies(profile, dependencies);
+            }
+        }
+        return dependencies;
+    }
+
+    private static void collectDependencies(Element container, Set<String> dependencies) {
+        for (Element dependenciesElement : directChildren(container, "dependencies")) {
+            collectDependencyElements(dependenciesElement, dependencies);
+        }
+    }
+
+    private static void collectDependencyElements(Element dependenciesElement, Set<String> dependencies) {
         NodeList children = dependenciesElement.getChildNodes();
         for (int index = 0; index < children.getLength(); index++) {
             Node child = children.item(index);
@@ -195,7 +259,6 @@ class ConfigurationTopologyContractTest {
                 );
             }
         }
-        return dependencies;
     }
 
     private static Element directChild(Element parent, String name) {
@@ -207,6 +270,18 @@ class ConfigurationTopologyContractTest {
             }
         }
         throw new IllegalStateException("Missing <" + name + "> under <" + parent.getTagName() + ">");
+    }
+
+    private static List<Element> directChildren(Element parent, String name) {
+        java.util.ArrayList<Element> matches = new java.util.ArrayList<>();
+        NodeList children = parent.getChildNodes();
+        for (int index = 0; index < children.getLength(); index++) {
+            Node child = children.item(index);
+            if (child instanceof Element element && hasName(element, name)) {
+                matches.add(element);
+            }
+        }
+        return List.copyOf(matches);
     }
 
     private static boolean hasName(Element element, String name) {
@@ -246,5 +321,8 @@ class ConfigurationTopologyContractTest {
             current = current.getParent();
         }
         return null;
+    }
+
+    private record JavaWorkaroundPattern(String description, Pattern pattern) {
     }
 }
