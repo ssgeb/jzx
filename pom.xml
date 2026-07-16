@@ -145,20 +145,6 @@
 			<version>5.2.3</version>
 		</dependency>
 
-		<!-- H2 鏁版嵁搴?-->
-		<dependency>
-			<groupId>com.h2database</groupId>
-			<artifactId>h2</artifactId>
-			<scope>test</scope>
-		</dependency>
-
-		<!-- Mockito娴嬭瘯妗嗘灦 -->
-		<dependency>
-			<groupId>org.mockito</groupId>
-			<artifactId>mockito-core</artifactId>
-			<scope>test</scope>
-		</dependency>
-
 		<!-- ONNX Runtime -->
 		<dependency>
 			<groupId>com.microsoft.onnxruntime</groupId>

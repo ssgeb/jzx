@@ -70,7 +70,10 @@ CREATE DATABASE doorhandledb DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unico
 ### 后端设置
 
 1. 克隆代码库
-2. 修改配置文件 `src/main/resources/application.yml` 中的数据库配置
+2. 将本地开发环境变量模板复制为 `.env`，并填写数据库、JWT 和外部服务等真实配置。`.env` 仅供本机使用，不要提交到仓库：
+```powershell
+Copy-Item .env.example .env
+```
 3. 编译项目：
 ```bash
 mvn clean compile
@@ -138,11 +141,15 @@ npm run dev
 
 项目提供 Nginx Web 服务器、API 反向代理和双 Spring Boot 实例负载均衡配置：
 
+Docker/Compose 使用独立的 `deploy/docker.env`，只覆盖容器访问数据库、Redis、Kafka 和外部服务所需的地址、开关、凭据及 JVM 参数；它与本地开发使用的根目录 `.env` 职责不同。
+
 ```powershell
 Copy-Item deploy/docker.env.example deploy/docker.env
 $env:DOORHANDLE_ENV_FILE = 'deploy/docker.env'
 docker compose -f compose.nginx.yml up -d --build
 ```
+
+请只提交两个 `.example` 模板，真实凭据不得提交。
 
 完整的环境变量、健康检查、SSE、故障切换和回滚说明见：
 

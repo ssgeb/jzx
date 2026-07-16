@@ -14,6 +14,8 @@ Windows 和 macOS 使用 `host.docker.internal` 访问宿主机。Compose 已为
 
 ## 2. 准备环境变量
 
+根目录 `.env.example` 面向本地开发；本部署方案使用 `deploy/docker.env.example` 生成容器专用配置，并由 `DOORHANDLE_ENV_FILE` 明确指定。容器配置只负责覆盖数据库、Redis、Kafka、外部服务、凭据和 JVM 参数，不应复制 `application.yml` 中无需变更的公共默认值。
+
 PowerShell：
 
 ```powershell
@@ -30,7 +32,7 @@ vi deploy/docker.env
 export DOORHANDLE_ENV_FILE=deploy/docker.env
 ```
 
-必须替换数据库密码、JWT Secret、DeepSeek Key 和 OSS 凭据。`deploy/docker.env` 已加入 `.gitignore`，不得提交真实凭据。
+必须替换数据库密码、JWT Secret、DeepSeek Key 和 OSS 凭据。根目录 `.env` 与 `deploy/docker.env` 均不得提交；仓库中只保留不含真实凭据的 `.example` 模板。
 
 如果暂时没有 Mem0，可设置：
 
