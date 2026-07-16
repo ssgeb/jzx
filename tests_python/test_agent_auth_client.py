@@ -1,4 +1,4 @@
-from tests_python import test_agent as agent
+from scripts.diagnostics import agent_live_smoke as agent
 
 
 class FakeResponse:

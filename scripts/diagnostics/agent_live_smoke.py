@@ -118,7 +118,7 @@ def extract_response(resp):
 # 测试套件
 # ============================================================
 
-def test_01_basic_intent_routing(token):
+def check_01_basic_intent_routing(token):
     """测试1: 基本意图路由 - 不同类型消息是否路由到正确Agent"""
     log("=== 测试1: 意图路由准确性 ===")
 
@@ -142,7 +142,7 @@ def test_01_basic_intent_routing(token):
         time.sleep(1)
 
 
-def test_02_detection_query(token):
+def check_02_detection_query(token):
     """测试2: 检测任务查询 - 回复是否基于真实数据"""
     log("=== 测试2: 检测任务查询 ===")
 
@@ -163,7 +163,7 @@ def test_02_detection_query(token):
     log(f"  回复内容: {content[:100]}...")
 
 
-def test_03_resource_query(token):
+def check_03_resource_query(token):
     """测试3: 资源查询 - 设备/人员数据是否真实"""
     log("=== 测试3: 资源查询 ===")
 
@@ -190,7 +190,7 @@ def test_03_resource_query(token):
     log(f"  人员回复: {content[:150]}...")
 
 
-def test_04_report_query(token):
+def check_04_report_query(token):
     """测试4: 报表统计 - 数据是否来自真实数据库"""
     log("=== 测试4: 报表统计 ===")
 
@@ -207,7 +207,7 @@ def test_04_report_query(token):
     log(f"  报表回复: {content[:150]}...")
 
 
-def test_05_ops_query(token):
+def check_05_ops_query(token):
     """测试5: 系统运维 - 状态检查"""
     log("=== 测试5: 系统运维 ===")
 
@@ -220,7 +220,7 @@ def test_05_ops_query(token):
     log(f"  运维回复: {content[:150]}...")
 
 
-def test_06_slot_filling(token):
+def check_06_slot_filling(token):
     """测试6: 追问机制 - 缺少必要信息时是否追问"""
     log("=== 测试6: 追问机制（槽位填充）===")
 
@@ -244,7 +244,7 @@ def test_06_slot_filling(token):
     log(f"  追问回复: {content[:150]}...")
 
 
-def test_07_error_handling(token):
+def check_07_error_handling(token):
     """测试7: 错误处理 - 不存在的资源是否有合理提示"""
     log("=== 测试7: 错误处理 ===")
 
@@ -263,7 +263,7 @@ def test_07_error_handling(token):
     log(f"  错误回复: {content[:150]}...")
 
 
-def test_08_anti_hallucination(token):
+def check_08_anti_hallucination(token):
     """测试8: 防幻觉 - 智能体是否编造不存在的数据"""
     log("=== 测试8: 防幻觉检测 ===")
 
@@ -296,7 +296,7 @@ def test_08_anti_hallucination(token):
     log(f"  回复: {content[:150]}...")
 
 
-def test_09_multi_turn_context(token):
+def check_09_multi_turn_context(token):
     """测试9: 多轮对话 - 上下文是否保持"""
     log("=== 测试9: 多轮对话上下文 ===")
 
@@ -318,7 +318,7 @@ def test_09_multi_turn_context(token):
     log(f"  第二轮: {r2['content'][:80]}...")
 
 
-def test_10_action_confirmation(token):
+def check_10_action_confirmation(token):
     """测试10: 操作确认 - 危险操作是否要求确认"""
     log("=== 测试10: 操作确认机制 ===")
 
@@ -343,7 +343,7 @@ def test_10_action_confirmation(token):
         assert_test("无actionId时是追问", is_asking, f"content={content[:100]}")
 
 
-def test_11_chitchat(token):
+def check_11_chitchat(token):
     """测试11: 闲聊处理 - 非任务消息是否合理回复"""
     log("=== 测试11: 闲聊处理 ===")
 
@@ -362,7 +362,7 @@ def test_11_chitchat(token):
         time.sleep(1)
 
 
-def test_12_response_quality(token):
+def check_12_response_quality(token):
     """测试12: 回复质量 - 是否有空回复、乱码、重复"""
     log("=== 测试12: 回复质量 ===")
 
@@ -412,18 +412,18 @@ def main():
     log(f"会话信息: {json.dumps(session_resp, ensure_ascii=False)[:100]}")
 
     # 3. 执行测试
-    test_01_basic_intent_routing(authenticated)
-    test_02_detection_query(authenticated)
-    test_03_resource_query(authenticated)
-    test_04_report_query(authenticated)
-    test_05_ops_query(authenticated)
-    test_06_slot_filling(authenticated)
-    test_07_error_handling(authenticated)
-    test_08_anti_hallucination(authenticated)
-    test_09_multi_turn_context(authenticated)
-    test_10_action_confirmation(authenticated)
-    test_11_chitchat(authenticated)
-    test_12_response_quality(authenticated)
+    check_01_basic_intent_routing(authenticated)
+    check_02_detection_query(authenticated)
+    check_03_resource_query(authenticated)
+    check_04_report_query(authenticated)
+    check_05_ops_query(authenticated)
+    check_06_slot_filling(authenticated)
+    check_07_error_handling(authenticated)
+    check_08_anti_hallucination(authenticated)
+    check_09_multi_turn_context(authenticated)
+    check_10_action_confirmation(authenticated)
+    check_11_chitchat(authenticated)
+    check_12_response_quality(authenticated)
 
     # 4. 汇总
     log("=" * 60)
