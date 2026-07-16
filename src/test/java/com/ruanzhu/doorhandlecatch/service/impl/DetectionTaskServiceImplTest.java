@@ -1,8 +1,6 @@
 package com.ruanzhu.doorhandlecatch.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruanzhu.doorhandlecatch.common.BusinessException;
-import com.ruanzhu.doorhandlecatch.config.properties.OssProperties;
 import com.ruanzhu.doorhandlecatch.dto.detection.CreateDetectionTaskRequest;
 import com.ruanzhu.doorhandlecatch.dto.detection.CreateDetectionTaskResponse;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionCaptureInfo;
@@ -17,20 +15,11 @@ import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadedFileItem;
 import com.ruanzhu.doorhandlecatch.dto.detection.event.DetectionTaskFinishedEvent;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.entity.ModelInfo;
-import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
-import com.ruanzhu.doorhandlecatch.mapper.ModelInfoMapper;
-import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
-import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
-import com.ruanzhu.doorhandlecatch.service.ModelService;
-import com.ruanzhu.doorhandlecatch.service.OssStorageService;
 import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -53,54 +42,14 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class DetectionTaskServiceImplTest {
 
-    @Mock
-    private DetectionTaskMapper detectionTaskMapper;
-
-    @Mock
-    private ModelInfoMapper modelInfoMapper;
-
-    @Mock
-    private ModelService modelService;
-
-    @Mock
-    private OssStorageService ossStorageService;
-
-    @Mock
-    private DetectionTaskDispatchService detectionTaskDispatchService;
-
-    @Mock
-    private ChatSessionService chatSessionService;
-
-    private OssProperties ossProperties;
-    private DetectionTaskServiceImpl detectionTaskService;
+    private DetectionTaskServiceFixture fixture;
 
     @BeforeEach
     void setUp() {
-        SecurityContextHolder.clearContext();
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("admin", "N/A",
-                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))
-        );
-        ossProperties = new OssProperties();
-        ossProperties.setUploadUrlExpireMinutes(15);
-        ossProperties.setPreviewUrlExpireMinutes(30);
-        ossProperties.setBasePrefix("detection");
-        detectionTaskService = new DetectionTaskServiceImpl(
-                detectionTaskMapper,
-                modelInfoMapper,
-                modelService,
-                ossStorageService,
-                ossProperties,
-                detectionTaskDispatchService,
-                chatSessionService,
-                new ObjectMapper(),
-                new com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy()
-        );
-        ReflectionTestUtils.setField(detectionTaskService, "maxImagesPerBatch", 200);
-        ReflectionTestUtils.setField(detectionTaskService, "maxImageBytes", 10L * 1024L * 1024L);
+        fixture = new DetectionTaskServiceFixture();
+        fixture.setUp();
     }
 
     @Test
@@ -108,13 +57,13 @@ class DetectionTaskServiceImplTest {
         DetectionTask task = new DetectionTask();
         task.setTaskId("det_private");
         task.setCreatedBy("bob");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("alice", "N/A",
                         List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")))
         );
 
-        assertEquals("det_private", detectionTaskService.getTaskProgress("det_private").getTaskId());
+        assertEquals("det_private", fixture.service.getTaskProgress("det_private").getTaskId());
     }
 
     @Test
@@ -141,15 +90,15 @@ class DetectionTaskServiceImplTest {
         modelInfo.setModelId(7);
         modelInfo.setVersion("v1");
 
-        when(ossStorageService.isConfigured()).thenReturn(true);
-        when(ossStorageService.normalizeBasePrefix()).thenReturn("detection");
-        when(ossStorageService.generatePutUrl(any(), any(), any())).thenReturn(new URL("http://example.com/upload"));
-        when(modelService.getAllModels()).thenReturn(List.of(modelInfo));
+        when(fixture.ossStorageService.isConfigured()).thenReturn(true);
+        when(fixture.ossStorageService.normalizeBasePrefix()).thenReturn("detection");
+        when(fixture.ossStorageService.generatePutUrl(any(), any(), any())).thenReturn(new URL("http://example.com/upload"));
+        when(fixture.modelService.getAllModels()).thenReturn(List.of(modelInfo));
 
-        CreateDetectionTaskResponse response = detectionTaskService.createTask(request);
+        CreateDetectionTaskResponse response = fixture.service.createTask(request);
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).insert(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).insert(taskCaptor.capture());
         DetectionTask savedTask = taskCaptor.getValue();
 
         assertEquals("2026-05-20", savedTask.getCaptureDate());
@@ -181,15 +130,15 @@ class DetectionTaskServiceImplTest {
         request.setCaptureInfo(captureInfo);
         request.setFiles(List.of(file));
 
-        when(ossStorageService.isConfigured()).thenReturn(true);
-        when(ossStorageService.normalizeBasePrefix()).thenReturn("detection");
-        when(ossStorageService.generatePutUrl(any(), any(), any())).thenReturn(new URL("http://example.com/upload"));
-        when(modelService.getAllModels()).thenReturn(List.of());
+        when(fixture.ossStorageService.isConfigured()).thenReturn(true);
+        when(fixture.ossStorageService.normalizeBasePrefix()).thenReturn("detection");
+        when(fixture.ossStorageService.generatePutUrl(any(), any(), any())).thenReturn(new URL("http://example.com/upload"));
+        when(fixture.modelService.getAllModels()).thenReturn(List.of());
 
-        detectionTaskService.createTask(request);
+        fixture.service.createTask(request);
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).insert(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).insert(taskCaptor.capture());
         DetectionTask savedTask = taskCaptor.getValue();
 
         assertEquals("2026-05-20_上海_CAM-01_批次A", savedTask.getBatchNo());
@@ -220,19 +169,19 @@ class DetectionTaskServiceImplTest {
         ModelInfo modelInfo = new ModelInfo();
         modelInfo.setModelId(7);
         modelInfo.setVersion("v1");
-        when(ossStorageService.isConfigured()).thenReturn(true);
-        when(ossStorageService.normalizeBasePrefix()).thenReturn("detection");
-        when(ossStorageService.generatePutUrl(any(), any(), any())).thenReturn(new URL("http://example.com/upload"));
-        when(modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
+        when(fixture.ossStorageService.isConfigured()).thenReturn(true);
+        when(fixture.ossStorageService.normalizeBasePrefix()).thenReturn("detection");
+        when(fixture.ossStorageService.generatePutUrl(any(), any(), any())).thenReturn(new URL("http://example.com/upload"));
+        when(fixture.modelInfoMapper.selectByModelId(7)).thenReturn(modelInfo);
 
-        detectionTaskService.createTask(request);
+        fixture.service.createTask(request);
 
-        verify(modelService).incrementUsageStats(eq(7), any(LocalDateTime.class));
+        verify(fixture.modelService).incrementUsageStats(eq(7), any(LocalDateTime.class));
     }
 
     @Test
     void createTaskRejectsOversizedUploadFileBeforeGeneratingUrls() {
-        ReflectionTestUtils.setField(detectionTaskService, "maxImageBytes", 4L);
+        ReflectionTestUtils.setField(fixture.service, "maxImageBytes", 4L);
         DetectionCaptureInfo captureInfo = new DetectionCaptureInfo();
         captureInfo.setCaptureDate("2026-05-20");
         captureInfo.setRegion("上海");
@@ -249,9 +198,9 @@ class DetectionTaskServiceImplTest {
         request.setCaptureInfo(captureInfo);
         request.setFiles(List.of(file));
 
-        when(ossStorageService.isConfigured()).thenReturn(true);
+        when(fixture.ossStorageService.isConfigured()).thenReturn(true);
 
-        BusinessException exception = assertThrows(BusinessException.class, () -> detectionTaskService.createTask(request));
+        BusinessException exception = assertThrows(BusinessException.class, () -> fixture.service.createTask(request));
 
         assertEquals("图片文件不能超过 4B", exception.getMessage());
     }
@@ -273,9 +222,9 @@ class DetectionTaskServiceImplTest {
         request.setCaptureInfo(captureInfo);
         request.setFiles(List.of(file));
 
-        when(ossStorageService.isConfigured()).thenReturn(true);
+        when(fixture.ossStorageService.isConfigured()).thenReturn(true);
 
-        BusinessException exception = assertThrows(BusinessException.class, () -> detectionTaskService.createTask(request));
+        BusinessException exception = assertThrows(BusinessException.class, () -> fixture.service.createTask(request));
 
         assertEquals("图片 Content-Type 不受支持: text/plain", exception.getMessage());
     }
@@ -286,7 +235,7 @@ class DetectionTaskServiceImplTest {
         task.setTaskId("det_001");
         task.setStatus("UPLOADING");
         task.setSourceOssPrefix("detection/2026/Original/");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         DetectionUploadedFileItem item = new DetectionUploadedFileItem();
         item.setFileName("img001.jpg");
@@ -298,7 +247,7 @@ class DetectionTaskServiceImplTest {
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.confirmUploaded("det_001", request)
+                () -> fixture.service.confirmUploaded("det_001", request)
         );
 
         assertEquals("上传文件对象 Key 不属于当前任务", exception.getMessage());
@@ -310,7 +259,7 @@ class DetectionTaskServiceImplTest {
         task.setTaskId("det_001");
         task.setStatus("UPLOADING");
         task.setSourceOssPrefix("detection/2026/Original/");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         DetectionUploadedFileItem blankItem = new DetectionUploadedFileItem();
         blankItem.setFileName("img001.jpg");
@@ -322,7 +271,7 @@ class DetectionTaskServiceImplTest {
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.confirmUploaded("det_001", request)
+                () -> fixture.service.confirmUploaded("det_001", request)
         );
 
         assertEquals("上传文件对象 Key 不能为空", exception.getMessage());
@@ -334,11 +283,11 @@ class DetectionTaskServiceImplTest {
         task.setTaskId("det_uploaded");
         task.setStatus("UPLOADED");
         task.setDispatchId("dispatch-existing");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        detectionTaskService.confirmUploaded("det_uploaded", new com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskUploadedRequest());
+        fixture.service.confirmUploaded("det_uploaded", new com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskUploadedRequest());
 
-        verify(detectionTaskDispatchService, Mockito.never()).dispatchTaskAsync(any());
+        verify(fixture.detectionTaskDispatchService, Mockito.never()).dispatchTaskAsync(any());
     }
 
     @Test
@@ -348,17 +297,17 @@ class DetectionTaskServiceImplTest {
         task.setTaskId("det_claim");
         task.setStatus("UPLOADING");
         task.setSourceOssPrefix("detection/task/Original/");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
-        when(detectionTaskMapper.claimUploaded(any())).thenReturn(0);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.claimUploaded(any())).thenReturn(0);
         DetectionUploadedFileItem item = new DetectionUploadedFileItem();
         item.setFileName("a.jpg");
         item.setObjectKey("detection/task/Original/a.jpg");
         var request = new com.ruanzhu.doorhandlecatch.dto.detection.DetectionTaskUploadedRequest();
         request.setUploadedFiles(List.of(item));
 
-        detectionTaskService.confirmUploaded("det_claim", request);
+        fixture.service.confirmUploaded("det_claim", request);
 
-        verify(detectionTaskDispatchService, Mockito.never()).dispatchTaskAsync(any());
+        verify(fixture.detectionTaskDispatchService, Mockito.never()).dispatchTaskAsync(any());
     }
 
     @Test
@@ -371,9 +320,9 @@ class DetectionTaskServiceImplTest {
         task.setTotalImages(1);
         task.setDispatchId("dispatch-1");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+        fixture.service.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_123")
                 .eventId("event-1")
                 .dispatchId("dispatch-1")
@@ -390,7 +339,7 @@ class DetectionTaskServiceImplTest {
                 .build());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper, org.mockito.Mockito.atLeastOnce()).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper, org.mockito.Mockito.atLeastOnce()).updateById(taskCaptor.capture());
         DetectionTask updatedTask = taskCaptor.getAllValues().get(taskCaptor.getAllValues().size() - 1);
 
         assertEquals(LocalDateTime.of(2026, 5, 20, 16, 12, 0), updatedTask.getStartedAt());
@@ -407,15 +356,15 @@ class DetectionTaskServiceImplTest {
         task.setStatus("QUEUED");
         task.setStage("QUEUED");
         task.setTotalImages(1);
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
         TenantContext tenant = new TenantContext(42L, "alice");
-        when(chatSessionService.resolveTenantForSystemCallback(task.getSessionId())).thenReturn(tenant);
+        when(fixture.chatSessionService.resolveTenantForSystemCallback(task.getSessionId())).thenReturn(tenant);
 
-        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+        fixture.service.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId(task.getTaskId()).eventId("event-chat").status("COMPLETED")
                 .totalImages(1).successfulImages(1).failedImages(0).build());
 
-        verify(chatSessionService).appendAssistantMessage(
+        verify(fixture.chatSessionService).appendAssistantMessage(
                 eq(tenant), eq(task.getSessionId()), any(),
                 eq("TEXT"), eq("DETECTION_ACTION"), eq(null));
     }
@@ -438,9 +387,9 @@ class DetectionTaskServiceImplTest {
         task.setTotalImages(1);
         task.setDispatchId("dispatch-done");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+        fixture.service.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_done")
                 .eventId("event-done")
                 .dispatchId("dispatch-done")
@@ -456,7 +405,7 @@ class DetectionTaskServiceImplTest {
                 .build());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper, org.mockito.Mockito.atLeastOnce()).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper, org.mockito.Mockito.atLeastOnce()).updateById(taskCaptor.capture());
         DetectionTask updatedTask = taskCaptor.getAllValues().get(taskCaptor.getAllValues().size() - 1);
 
         assertEquals("COMPLETED", updatedTask.getStatus());
@@ -494,9 +443,9 @@ class DetectionTaskServiceImplTest {
         defect.put("severityLevel", "MAJOR");
         defect.put("bbox", bbox);
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+        fixture.service.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_defect")
                 .eventId("event-defect")
                 .dispatchId("dispatch-defect")
@@ -512,7 +461,7 @@ class DetectionTaskServiceImplTest {
                 .build());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper, org.mockito.Mockito.atLeastOnce()).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper, org.mockito.Mockito.atLeastOnce()).updateById(taskCaptor.capture());
         DetectionTask updatedTask = taskCaptor.getAllValues().get(taskCaptor.getAllValues().size() - 1);
 
         assertEquals(1, updatedTask.getDefectCount());
@@ -527,16 +476,16 @@ class DetectionTaskServiceImplTest {
         DetectionTask task = new DetectionTask();
         task.setTaskId("det_stale");
         task.setDispatchId("dispatch-current");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+        fixture.service.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_stale")
                 .eventId("event-old")
                 .dispatchId("dispatch-old")
                 .status("COMPLETED")
                 .build());
 
-        verify(detectionTaskMapper, Mockito.never()).updateById(any());
+        verify(fixture.detectionTaskMapper, Mockito.never()).updateById(any());
     }
 
     @Test
@@ -545,16 +494,16 @@ class DetectionTaskServiceImplTest {
         task.setTaskId("det_duplicate");
         task.setDispatchId("dispatch-current");
         task.setLastFinishedEventId("event-1");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+        fixture.service.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
                 .taskId("det_duplicate")
                 .eventId("event-1")
                 .dispatchId("dispatch-current")
                 .status("COMPLETED")
                 .build());
 
-        verify(detectionTaskMapper, Mockito.never()).updateById(any());
+        verify(fixture.detectionTaskMapper, Mockito.never()).updateById(any());
     }
 
     @Test
@@ -562,12 +511,12 @@ class DetectionTaskServiceImplTest {
         DetectionTask task = new DetectionTask();
         task.setTaskId("det_background_failure");
         task.setCreatedBy("alice");
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
         SecurityContextHolder.clearContext();
 
-        detectionTaskService.failTask("det_background_failure", "broker unavailable");
+        fixture.service.failTask("det_background_failure", "broker unavailable");
 
-        verify(detectionTaskMapper).updateById(task);
+        verify(fixture.detectionTaskMapper).updateById(task);
         assertEquals("FAILED", task.getStatus());
         assertEquals("broker unavailable", task.getErrorMessage());
     }
@@ -579,13 +528,13 @@ class DetectionTaskServiceImplTest {
         task.setStatus("COMPLETED");
         task.setFlowStatus("PENDING_REVIEW");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        DetectionTaskProgressResponse response = detectionTaskService.advanceTaskFlow("det_123", "CONFIRMED");
+        DetectionTaskProgressResponse response = fixture.service.advanceTaskFlow("det_123", "CONFIRMED");
 
         assertEquals("CONFIRMED", response.getFlowStatus());
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).updateById(taskCaptor.capture());
         assertEquals("CONFIRMED", taskCaptor.getValue().getFlowStatus());
     }
 
@@ -597,11 +546,11 @@ class DetectionTaskServiceImplTest {
         task.setFlowStatus("CONFIRMED");
         task.setReviewStatus("REVIEWED");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.advanceTaskFlow("det_bypass", "RELEASED")
+                () -> fixture.service.advanceTaskFlow("det_bypass", "RELEASED")
         );
 
         assertEquals("处置类状态请通过质检处置接口流转", exception.getMessage());
@@ -621,9 +570,9 @@ class DetectionTaskServiceImplTest {
         request.setFalsePositiveCount(1);
         request.setReviewRemark("锈蚀区域明显，1 张疑似误报");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        DetectionTaskProgressResponse response = detectionTaskService.reviewTask("det_review", request);
+        DetectionTaskProgressResponse response = fixture.service.reviewTask("det_review", request);
 
         assertEquals("REVIEWED", response.getReviewStatus());
         assertEquals("CONFIRMED_DEFECT", response.getReviewConclusion());
@@ -631,7 +580,7 @@ class DetectionTaskServiceImplTest {
         assertEquals("CONFIRMED", response.getFlowStatus());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).updateById(taskCaptor.capture());
         DetectionTask reviewedTask = taskCaptor.getValue();
         assertEquals("REVIEWED", reviewedTask.getReviewStatus());
         assertEquals("CONFIRMED_DEFECT", reviewedTask.getReviewConclusion());
@@ -653,11 +602,11 @@ class DetectionTaskServiceImplTest {
         request.setConfirmedDefectCount(-1);
         request.setFalsePositiveCount(0);
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.reviewTask("det_review", request)
+                () -> fixture.service.reviewTask("det_review", request)
         );
 
         assertEquals("复核数量不能为负数", exception.getMessage());
@@ -674,9 +623,9 @@ class DetectionTaskServiceImplTest {
         request.setReviewConclusion("PASS");
         request.setSeverityLevel("LOW");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        DetectionTaskProgressResponse response = detectionTaskService.reviewTask("det_review_alias", request);
+        DetectionTaskProgressResponse response = fixture.service.reviewTask("det_review_alias", request);
 
         assertEquals("NORMAL_RELEASE", response.getReviewConclusion());
         assertEquals("MINOR", response.getSeverityLevel());
@@ -696,9 +645,9 @@ class DetectionTaskServiceImplTest {
         request.setDueAt("2026-06-11T18:30:00+08:00");
         request.setAssignmentRemark("优先复核锈蚀疑似缺陷");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        DetectionTaskProgressResponse response = detectionTaskService.assignQualityTask("det_assign", request);
+        DetectionTaskProgressResponse response = fixture.service.assignQualityTask("det_assign", request);
 
         assertEquals("REVIEWING", response.getFlowStatus());
         assertEquals("QC-STATION-01", response.getQualityStation());
@@ -706,7 +655,7 @@ class DetectionTaskServiceImplTest {
         assertEquals("优先复核锈蚀疑似缺陷", response.getAssignmentRemark());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).updateById(taskCaptor.capture());
         DetectionTask assignedTask = taskCaptor.getValue();
         assertEquals("QC-STATION-01", assignedTask.getQualityStation());
         assertEquals("qa-user", assignedTask.getAssignee());
@@ -729,11 +678,11 @@ class DetectionTaskServiceImplTest {
         request.setReviewConclusion("CONFIRMED_DEFECT");
         request.setSeverityLevel("MAJOR");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.reviewTask("det_review_done", request)
+                () -> fixture.service.reviewTask("det_review_done", request)
         );
 
         assertEquals("已处置任务不能重复复核", exception.getMessage());
@@ -753,9 +702,9 @@ class DetectionTaskServiceImplTest {
         request.setDispositionAction("REWORK");
         request.setDispositionRemark("缺陷确认，转返工处理");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        DetectionTaskProgressResponse response = detectionTaskService.disposeTask("det_dispose", request);
+        DetectionTaskProgressResponse response = fixture.service.disposeTask("det_dispose", request);
 
         assertEquals("DISPOSED", response.getDispositionStatus());
         assertEquals("REWORK", response.getDispositionAction());
@@ -763,7 +712,7 @@ class DetectionTaskServiceImplTest {
         assertEquals(Boolean.FALSE, response.getRecheckRequired());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).updateById(taskCaptor.capture());
         DetectionTask disposedTask = taskCaptor.getValue();
         assertEquals("DISPOSED", disposedTask.getDispositionStatus());
         assertEquals("REWORK", disposedTask.getDispositionAction());
@@ -785,11 +734,11 @@ class DetectionTaskServiceImplTest {
         DetectionDispositionRequest request = new DetectionDispositionRequest();
         request.setDispositionAction("RELEASE");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.disposeTask("det_dispose", request)
+                () -> fixture.service.disposeTask("det_dispose", request)
         );
 
         assertEquals("存在确认缺陷或待复检结论的任务不能直接放行", exception.getMessage());
@@ -810,11 +759,11 @@ class DetectionTaskServiceImplTest {
         DetectionDispositionRequest request = new DetectionDispositionRequest();
         request.setDispositionAction("SCRAP");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.disposeTask("det_dispose_done", request)
+                () -> fixture.service.disposeTask("det_dispose_done", request)
         );
 
         assertEquals("任务已完成质检处置，不能重复处置", exception.getMessage());
@@ -836,9 +785,9 @@ class DetectionTaskServiceImplTest {
         request.setReworkRemark("已更换门把手锁扣组件");
         request.setRecheckRequired(true);
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        DetectionTaskProgressResponse response = detectionTaskService.submitReworkResult("det_rework", request);
+        DetectionTaskProgressResponse response = fixture.service.submitReworkResult("det_rework", request);
 
         assertEquals("RECHECK_REQUIRED", response.getFlowStatus());
         assertEquals("HANDLE_REPLACED", response.getReworkResult());
@@ -846,7 +795,7 @@ class DetectionTaskServiceImplTest {
         assertEquals(Boolean.TRUE, response.getRecheckRequired());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).updateById(taskCaptor.capture());
         DetectionTask reworkedTask = taskCaptor.getValue();
         assertEquals("HANDLE_REPLACED", reworkedTask.getReworkResult());
         assertEquals("repair-user", reworkedTask.getReworkOperator());
@@ -875,9 +824,9 @@ class DetectionTaskServiceImplTest {
             page.setRecords(List.of(task));
             page.setTotal(1);
             return page;
-        }).when(detectionTaskMapper).selectPage(any(), any());
+        }).when(fixture.detectionTaskMapper).selectPage(any(), any());
 
-        java.util.Map<String, Object> result = detectionTaskService.listQualityQueue("PENDING_REVIEW", 1, 20);
+        java.util.Map<String, Object> result = fixture.service.listQualityQueue("PENDING_REVIEW", 1, 20);
 
         assertEquals("PENDING_REVIEW", result.get("queue"));
         assertEquals(1L, result.get("total"));
@@ -938,9 +887,9 @@ class DetectionTaskServiceImplTest {
         task2.setCreatedAt(LocalDateTime.of(2026, 6, 11, 10, 0));
         task2.setUpdatedAt(LocalDateTime.of(2026, 6, 11, 10, 5));
 
-        when(detectionTaskMapper.selectList(any())).thenReturn(List.of(task1, task2));
+        when(fixture.detectionTaskMapper.selectList(any())).thenReturn(List.of(task1, task2));
 
-        java.util.Map<String, Object> report = detectionTaskService.getBatchTraceReport("2026-06-11_SH_CAM01_A");
+        java.util.Map<String, Object> report = fixture.service.getBatchTraceReport("2026-06-11_SH_CAM01_A");
 
         assertEquals("BATCH_TRACE_REPORT", report.get("reportType"));
         @SuppressWarnings("unchecked")
@@ -1009,9 +958,9 @@ class DetectionTaskServiceImplTest {
         task2.setCreatedAt(LocalDateTime.of(2026, 6, 11, 10, 0));
         task2.setUpdatedAt(LocalDateTime.of(2026, 6, 11, 10, 30));
 
-        when(detectionTaskMapper.selectList(any())).thenReturn(List.of(task1, task2));
+        when(fixture.detectionTaskMapper.selectList(any())).thenReturn(List.of(task1, task2));
 
-        java.util.Map<String, Object> report = detectionTaskService.getWorkOrderTraceReport("WO-20260611-001");
+        java.util.Map<String, Object> report = fixture.service.getWorkOrderTraceReport("WO-20260611-001");
 
         assertEquals("WORK_ORDER_TRACE_REPORT", report.get("reportType"));
         assertEquals("WO-20260611-001", report.get("workOrderNo"));
@@ -1039,7 +988,7 @@ class DetectionTaskServiceImplTest {
     void listQualityQueueRejectsUnsupportedQueue() {
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.listQualityQueue("UNKNOWN", 1, 20)
+                () -> fixture.service.listQualityQueue("UNKNOWN", 1, 20)
         );
 
         assertEquals("不支持的质检队列: UNKNOWN", exception.getMessage());
@@ -1067,9 +1016,9 @@ class DetectionTaskServiceImplTest {
             page.setRecords(List.of(task));
             page.setTotal(1);
             return page;
-        }).when(detectionTaskMapper).selectPage(any(), any());
+        }).when(fixture.detectionTaskMapper).selectPage(any(), any());
 
-        java.util.Map<String, Object> result = detectionTaskService.listDefectGallery(
+        java.util.Map<String, Object> result = fixture.service.listDefectGallery(
                 "Rusty", "MAJOR", "CAM-01", "BATCH-001", 7, 1, 20
         );
 
@@ -1103,16 +1052,16 @@ class DetectionTaskServiceImplTest {
         task.setStartedAt(LocalDateTime.of(2026, 6, 10, 10, 0));
         task.setFinishedAt(LocalDateTime.of(2026, 6, 10, 10, 1));
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
-        DetectionTaskProgressResponse response = detectionTaskService.retryTask("det_retry");
+        DetectionTaskProgressResponse response = fixture.service.retryTask("det_retry");
 
         assertEquals("UPLOADED", response.getStatus());
         assertEquals("PENDING_DETECTION", response.getFlowStatus());
         assertEquals("重新检测任务已提交", response.getMessage());
 
         ArgumentCaptor<DetectionTask> taskCaptor = ArgumentCaptor.forClass(DetectionTask.class);
-        verify(detectionTaskMapper).updateById(taskCaptor.capture());
+        verify(fixture.detectionTaskMapper).updateById(taskCaptor.capture());
         DetectionTask retriedTask = taskCaptor.getValue();
         assertEquals("UPLOADED", retriedTask.getStatus());
         assertEquals("UPLOADED", retriedTask.getStage());
@@ -1129,7 +1078,7 @@ class DetectionTaskServiceImplTest {
         assertEquals(null, retriedTask.getErrorMessage());
         assertEquals(null, retriedTask.getStartedAt());
         assertEquals(null, retriedTask.getFinishedAt());
-        verify(detectionTaskDispatchService).dispatchTaskAsync("det_retry");
+        verify(fixture.detectionTaskDispatchService).dispatchTaskAsync("det_retry");
     }
 
     @Test
@@ -1140,11 +1089,11 @@ class DetectionTaskServiceImplTest {
         task.setFlowStatus("RELEASED");
         task.setOriginalImageKeysJson("[\"detection/source/img001.jpg\"]");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> detectionTaskService.retryTask("det_done")
+                () -> fixture.service.retryTask("det_done")
         );
 
         assertEquals("当前任务状态不支持重新检测", exception.getMessage());
@@ -1164,12 +1113,12 @@ class DetectionTaskServiceImplTest {
         uploaded.setFileName("img001.jpg");
         uploaded.setObjectKey("detection/source/img001.jpg");
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
-        when(detectionTaskMapper.claimUploaded(any())).thenReturn(1);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.detectionTaskMapper.claimUploaded(any())).thenReturn(1);
 
-        detectionTaskService.markUploaded("det_mark_uploaded", List.of(uploaded));
+        fixture.service.markUploaded("det_mark_uploaded", List.of(uploaded));
 
-        verify(detectionTaskMapper).claimUploaded(any());
+        verify(fixture.detectionTaskMapper).claimUploaded(any());
         DetectionTask updatedTask = task;
 
         assertEquals("UPLOADED", updatedTask.getStatus());
@@ -1178,7 +1127,7 @@ class DetectionTaskServiceImplTest {
         assertEquals(1, updatedTask.getTotalImages());
         assertTrue(updatedTask.getOriginalImageKeysJson().contains("detection/source/img001.jpg"));
         assertNotNull(updatedTask.getDispatchId());
-        verify(detectionTaskDispatchService).dispatchTaskAsync("det_mark_uploaded");
+        verify(fixture.detectionTaskDispatchService).dispatchTaskAsync("det_mark_uploaded");
     }
 
     @Test
@@ -1221,10 +1170,10 @@ class DetectionTaskServiceImplTest {
         task.setStartedAt(LocalDateTime.of(2026, 6, 10, 10, 2));
         task.setFinishedAt(LocalDateTime.of(2026, 6, 10, 10, 8));
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
-        when(ossStorageService.isConfigured()).thenReturn(true);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.ossStorageService.isConfigured()).thenReturn(true);
 
-        java.util.Map<String, Object> report = detectionTaskService.getQualityReport("det_report");
+        java.util.Map<String, Object> report = fixture.service.getQualityReport("det_report");
 
         assertEquals("QUALITY_INSPECTION_REPORT", report.get("reportType"));
         assertEquals("det_report", report.get("taskId"));
@@ -1293,10 +1242,10 @@ class DetectionTaskServiceImplTest {
         task.setFinishedAt(LocalDateTime.of(2026, 6, 10, 9, 8));
         task.setReviewedAt(LocalDateTime.of(2026, 6, 10, 9, 20));
 
-        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
-        when(ossStorageService.isConfigured()).thenReturn(true);
+        when(fixture.detectionTaskMapper.selectOne(any())).thenReturn(task);
+        when(fixture.ossStorageService.isConfigured()).thenReturn(true);
 
-        DetectionTaskTraceResponse response = detectionTaskService.getTaskTrace("det_trace");
+        DetectionTaskTraceResponse response = fixture.service.getTaskTrace("det_trace");
 
         assertEquals("det_trace", response.getTaskId());
         assertEquals("BATCH-001", response.getBatchNo());
