@@ -3,8 +3,6 @@ const test = require('node:test')
 const { readFrontendFile, readProjectFile } = require('./helpers/project-source.cjs')
 
 {
-  const { readProjectFile } = require('./helpers/project-source.cjs')
-
   const serviceBlock = (compose, name) => {
     const marker = `  ${name}:`
     const start = compose.indexOf(marker)
@@ -77,8 +75,6 @@ const { readFrontendFile, readProjectFile } = require('./helpers/project-source.
 }
 
 {
-  const { readProjectFile } = require('./helpers/project-source.cjs')
-
   test('declares leetcode as the repository Python environment', () => {
     const environment = readProjectFile('environment.yml')
 
