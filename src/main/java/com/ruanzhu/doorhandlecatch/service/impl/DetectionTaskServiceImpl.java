@@ -1322,14 +1322,7 @@ public class DetectionTaskServiceImpl implements DetectionTaskService {
 
     private void applyOwnerFilter(LambdaQueryWrapper<DetectionTask> wrapper) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (accessPolicy.isAdmin(authentication)) {
-            return;
-        }
-        if (authentication == null || !StringUtils.hasText(authentication.getName())) {
-            wrapper.apply("1 = 0");
-            return;
-        }
-        wrapper.eq(DetectionTask::getCreatedBy, authentication.getName());
+        accessPolicy.assertAuthenticated(authentication);
     }
 
     private ModelInfo resolveModelInfo(Integer modelId) {

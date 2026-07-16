@@ -1218,14 +1218,7 @@ public class DetectionAgentServiceImpl implements DetectionAgentService {
 
     private void applyOwnerFilter(LambdaQueryWrapper<DetectionTask> wrapper) {
         Authentication authentication = currentAuthentication();
-        if (detectionTaskAccessPolicy.isAdmin(authentication)) {
-            return;
-        }
-        if (authentication == null || !StringUtils.hasText(authentication.getName())) {
-            wrapper.apply("1 = 0");
-            return;
-        }
-        wrapper.eq(DetectionTask::getCreatedBy, authentication.getName());
+        detectionTaskAccessPolicy.assertAuthenticated(authentication);
     }
 
     private Authentication currentAuthentication() {

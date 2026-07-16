@@ -29,7 +29,7 @@ class ChatProjectServiceImplTest {
     }
 
     @Test
-    void shouldDetachOnlyCurrentUsersSessionsWhenDeletingProject() {
+    void shouldDetachAllSharedSessionsWhenDeletingProject() {
         ChatProject project = new ChatProject();
         project.setId(10L);
         project.setProjectId("proj_admin_001");
@@ -51,8 +51,9 @@ class ChatProjectServiceImplTest {
         chatProjectService.deleteProject("admin", "proj_admin_001");
 
         assertThat(ownSession.getProjectId()).isNull();
-        assertThat(otherSession.getProjectId()).isEqualTo("proj_admin_001");
+        assertThat(otherSession.getProjectId()).isNull();
         verify(chatSessionMapper).updateById(ownSession);
+        verify(chatSessionMapper).updateById(otherSession);
         verify(chatProjectMapper).deleteById(10L);
     }
 }

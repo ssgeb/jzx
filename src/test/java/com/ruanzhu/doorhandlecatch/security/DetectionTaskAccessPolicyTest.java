@@ -8,6 +8,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DetectionTaskAccessPolicyTest {
@@ -15,13 +16,11 @@ class DetectionTaskAccessPolicyTest {
     private final DetectionTaskAccessPolicy policy = new DetectionTaskAccessPolicy();
 
     @Test
-    void operatorCannotAccessForeignTask() {
+    void authenticatedOperatorCanAccessForeignTask() {
         DetectionTask task = taskOwnedBy("alice");
         var auth = authentication("bob", "ROLE_OPERATOR");
 
-        assertThatThrownBy(() -> policy.assertCanAccess(task, auth))
-                .isInstanceOf(BusinessException.class)
-                .hasMessage("无权访问该资源");
+        assertThatCode(() -> policy.assertCanAccess(task, auth)).doesNotThrowAnyException();
     }
 
     @Test
@@ -38,7 +37,7 @@ class DetectionTaskAccessPolicyTest {
     void anonymousCannotAccessTask() {
         assertThatThrownBy(() -> policy.assertCanAccess(taskOwnedBy("alice"), null))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("无权访问该资源");
+                .hasMessage("请先登录");
     }
 
     private DetectionTask taskOwnedBy(String username) {

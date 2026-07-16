@@ -75,7 +75,10 @@ def test_home_page(page):
         if sidebar.is_visible():
             print('[OK] 侧边栏存在')
 
-def test_login_flow(page, username='admin', password='admin123'):
+def test_login_flow(page, username=None, password=None):
+    username = username or os.environ.get('E2E_USERNAME', '')
+    password = password or os.environ.get('E2E_PASSWORD', '')
+    assert username and password, 'Set E2E_USERNAME and E2E_PASSWORD before running login E2E tests'
     """测试登录流程"""
     print('\n=== 测试登录流程 ===')
     page.goto(f'{BASE_URL}/#/login')

@@ -27,6 +27,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -56,7 +57,7 @@ class OpsAgentServiceImplTest {
     }
 
     @Test
-    void answerRejectsForeignFailedTaskForOperator() {
+    void answerIncludesForeignFailedTaskForOperator() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
                         "alice",
@@ -81,11 +82,14 @@ class OpsAgentServiceImplTest {
                 new DetectionTaskAccessPolicy()
         );
 
-        assertThrows(BusinessException.class, () -> service.answer("检查检测链路", "alice"));
+        assertNotNull(service.answer("检查检测链路", "alice"));
     }
 
     @Test
     void answerReportsKafkaAndRemoteWorkerStatus() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        "alice", "N/A", List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
         KafkaTaskProperties kafkaTaskProperties = new KafkaTaskProperties();
         kafkaTaskProperties.setEnabled(true);
         kafkaTaskProperties.setBootstrapServers("kafka.remote.internal:9092");

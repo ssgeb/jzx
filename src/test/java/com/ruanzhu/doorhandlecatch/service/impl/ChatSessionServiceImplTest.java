@@ -77,12 +77,15 @@ class ChatSessionServiceImplTest {
     }
 
     @Test
-    void shouldRejectSessionAccessWhenOwnerDoesNotMatch() {
-        when(chatSessionMapper.selectOne(any())).thenReturn(null);
+    void shouldAllowSessionAccessWhenCreatorDoesNotMatch() {
+        ChatSession session = new ChatSession();
+        session.setSessionId("sess_admin_default");
+        session.setUsername("admin");
+        when(chatSessionMapper.selectOne(any())).thenReturn(session);
+        when(chatMessageMapper.findBySessionId(anyString())).thenReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> chatSessionService.getSession("other", "sess_admin_default"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessage("会话不存在");
+        assertThat(chatSessionService.getSession("other", "sess_admin_default").getSessionId())
+                .isEqualTo("sess_admin_default");
     }
 
     @Test

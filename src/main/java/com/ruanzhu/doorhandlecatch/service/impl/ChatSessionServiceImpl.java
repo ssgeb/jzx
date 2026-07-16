@@ -72,7 +72,6 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     @Override
     public List<ChatSessionResponse> listUserSessions(String username) {
         List<ChatSession> sessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getUsername, username)
                 .eq(ChatSession::getStatus, "ACTIVE")
                 .orderByDesc(ChatSession::getPinned)
                 .orderByDesc(ChatSession::getUpdatedAt));
@@ -283,7 +282,6 @@ public class ChatSessionServiceImpl implements ChatSessionService {
     private ChatSession requireOwnedSession(String username, String sessionId) {
         ChatSession session = chatSessionMapper.selectOne(new LambdaQueryWrapper<ChatSession>()
                 .eq(ChatSession::getSessionId, sessionId)
-                .eq(ChatSession::getUsername, username)
                 .last("limit 1"));
         if (session == null) {
             throw new BusinessException(404, "会话不存在");

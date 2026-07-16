@@ -162,7 +162,7 @@ class ImageDetectionServiceImplTest {
     }
 
     @Test
-    void deleteDetectionDataRejectsForeignTaskForOperator() {
+    void deleteDetectionDataAllowsForeignTaskForOperator() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
                         "alice",
@@ -173,12 +173,9 @@ class ImageDetectionServiceImplTest {
         task.setCreatedBy("bob");
         when(detectionTaskMapper.selectById(10L)).thenReturn(task);
 
-        BusinessException exception = assertThrows(
-                BusinessException.class,
-                () -> imageDetectionService.deleteDetectionData(10L));
+        imageDetectionService.deleteDetectionData(10L);
 
-        assertEquals(403, exception.getCode());
-        verify(detectionTaskMapper, never()).deleteById(10L);
+        verify(detectionTaskMapper).deleteById(10L);
     }
 
     @Test

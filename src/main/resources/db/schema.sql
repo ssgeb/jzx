@@ -6,6 +6,26 @@ SET character_set_results = utf8mb4;
 
 USE doorhandledb;
 
+CREATE TABLE IF NOT EXISTS `operation_audit_log` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `operator` VARCHAR(64) NOT NULL,
+    `action` VARCHAR(32) NOT NULL,
+    `resource_type` VARCHAR(64) NOT NULL,
+    `resource_id` VARCHAR(128) DEFAULT NULL,
+    `request_method` VARCHAR(16) DEFAULT NULL,
+    `request_path` VARCHAR(512) DEFAULT NULL,
+    `change_summary` JSON DEFAULT NULL,
+    `result` VARCHAR(16) NOT NULL,
+    `client_ip` VARCHAR(45) DEFAULT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_audit_operator_time` (`operator`, `created_at`),
+    KEY `idx_audit_resource_time` (`resource_type`, `resource_id`, `created_at`),
+    KEY `idx_audit_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+USE doorhandledb;
+
 -- ============================================================
 -- 用户表
 -- ============================================================
@@ -19,9 +39,6 @@ CREATE TABLE IF NOT EXISTS users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-INSERT IGNORE INTO users (id, username, password, email, phone, role)
-VALUES (1, 'admin', '$2b$12$1JubAveAPOmdM2wuxLsHAOGDkXOcAaUff2fraVjbpGcvz/.mrQdf6', 'admin@example.com', '13800138000', 'ADMIN');
 
 -- ============================================================
 -- 模型管理表（model_id 直接作为主键）
