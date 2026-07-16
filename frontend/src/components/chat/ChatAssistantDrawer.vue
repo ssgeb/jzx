@@ -72,6 +72,7 @@
           <!-- 消息区 -->
           <div class="chat-body" ref="chatBodyRef">
             <ChatMessageList
+              ref="messageListRef"
               :messages="chatStore.messages"
               :loading="chatStore.loading"
               :confirming-action-ids="chatStore.confirmingActionIds"
@@ -79,6 +80,13 @@
               @send="handleSend"
             />
           </div>
+
+          <ChatQuestionNavigator
+            :questions="questionItems"
+            :active-key="activeQuestionKey"
+            :reset-key="`${chatStore.sessionId}-${chatStore.visible}`"
+            @locate="handleLocateQuestion"
+          />
 
           <!-- 输入区 -->
           <ChatComposer :loading="chatStore.loading" @send="handleSend" />
@@ -166,15 +174,31 @@ import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useChatAssistantStore } from '@/stores/chatAssistant'
 import ChatComposer from './ChatComposer.vue'
 import ChatMessageList from './ChatMessageList.vue'
+import ChatQuestionNavigator from './ChatQuestionNavigator.vue'
 import ChatSidebar from './ChatSidebar.vue'
+import { buildQuestionItems } from '@/utils/chatMessageNavigation'
 
 const chatStore = useChatAssistantStore()
 const chatBodyRef = ref(null)
+const messageListRef = ref(null)
+const activeQuestionKey = ref('')
 const resizeTooltip = ref('拖拽调整面板宽度')
 const diagnosticsVisible = ref(false)
 const routeTrace = computed(() => {
   const trace = chatStore.checkpointSnapshot?.routeTrace
   return Array.isArray(trace) ? trace.slice(-8) : []
+})
+const questionItems = computed(() => buildQuestionItems(chatStore.messages))
+
+const handleLocateQuestion = (key) => {
+  if (messageListRef.value?.locateMessage(key)) activeQuestionKey.value = key
+}
+
+watch(() => chatStore.sessionId, () => {
+  activeQuestionKey.value = ''
+})
+watch(() => chatStore.visible, (visible) => {
+  if (!visible) activeQuestionKey.value = ''
 })
 
 // 关闭侧边栏菜单
@@ -356,6 +380,7 @@ const handleDrawerChange = (value) => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  position: relative;
 }
 
 /* ── 拖拽手柄 ── */

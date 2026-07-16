@@ -1,3 +1,0 @@
-- [ ] After upload confirmation, UI shows queued state instead of immediate detecting
-- [ ] While Kafka/FastAPI processing runs, polling still works through Java APIs
-- [ ] Result page shows source prefix, result prefix, result JSON link, detection start time, detection end time
