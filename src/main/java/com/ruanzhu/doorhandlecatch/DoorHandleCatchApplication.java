@@ -1,15 +1,10 @@
 package com.ruanzhu.doorhandlecatch;
 
-import com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 
-@SpringBootApplication(exclude = {MybatisPlusAutoConfiguration.class})
+@SpringBootApplication
 @EnableAsync
 public class DoorHandleCatchApplication {
 	
@@ -31,9 +26,6 @@ public class DoorHandleCatchApplication {
 		// 设置默认编码为UTF-8
 		System.setProperty("file.encoding", "UTF-8");
 		System.setProperty("sun.jnu.encoding", "UTF-8");
-		
-		// 设置系统属性，禁用MybatisPlus的ddlApplicationRunner
-		System.setProperty("mybatis-plus.global-config.enable-sql-runner", "false");
 		
 		// 检查命令行参数
 		checkAndProcessArgs(args);
@@ -148,17 +140,6 @@ public class DoorHandleCatchApplication {
 		if (!directory.delete()) {
 			logger.warn("无法删除目录: {}", directory.getAbsolutePath());
 		}
-	}
-	
-	/**
-	 * 添加自己的MybatisPlus配置类，而不是使用自动配置
-	 */
-	@Bean
-	@Primary
-	public ApplicationRunner ddlApplicationRunner() {
-		return args -> {
-			// 空实现，只为解决Bean类型问题
-		};
 	}
 	
 	/**

@@ -24,7 +24,19 @@
 		<maven.compiler.source>17</maven.compiler.source>
 		<maven.compiler.target>17</maven.compiler.target>
 		<mybatis-plus.version>3.5.4</mybatis-plus.version>
+		<mybatis-spring.version>3.0.3</mybatis-spring.version>
 	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<!-- Keep the Spring 6.1-compatible version that the project already resolved. -->
+			<dependency>
+				<groupId>org.mybatis</groupId>
+				<artifactId>mybatis-spring</artifactId>
+				<version>${mybatis-spring.version}</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 
 	<dependencies>
 		<dependency>
@@ -94,17 +106,10 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- MyBatis -->
-		<dependency>
-			<groupId>org.mybatis.spring.boot</groupId>
-			<artifactId>mybatis-spring-boot-starter</artifactId>
-			<version>3.0.3</version>
-		</dependency>
-
-		<!-- MyBatis-Plus -->
+		<!-- MyBatis-Plus for Spring Boot 3 -->
 		<dependency>
 			<groupId>com.baomidou</groupId>
-			<artifactId>mybatis-plus-boot-starter</artifactId>
+			<artifactId>mybatis-plus-spring-boot3-starter</artifactId>
 			<version>${mybatis-plus.version}</version>
 		</dependency>
 
