@@ -55,4 +55,8 @@ final class DetectionTaskServiceFixture {
         ReflectionTestUtils.setField(service, "maxImagesPerBatch", 200);
         ReflectionTestUtils.setField(service, "maxImageBytes", 10L * 1024L * 1024L);
     }
+
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
 }

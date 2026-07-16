@@ -16,10 +16,13 @@ import com.ruanzhu.doorhandlecatch.dto.detection.event.DetectionTaskFinishedEven
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.entity.ModelInfo;
 import com.ruanzhu.doorhandlecatch.security.TenantContext;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -42,6 +45,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class DetectionTaskServiceImplTest {
 
     private DetectionTaskServiceFixture fixture;
@@ -50,6 +54,11 @@ class DetectionTaskServiceImplTest {
     void setUp() {
         fixture = new DetectionTaskServiceFixture();
         fixture.setUp();
+    }
+
+    @AfterEach
+    void tearDown() {
+        fixture.tearDown();
     }
 
     @Test
