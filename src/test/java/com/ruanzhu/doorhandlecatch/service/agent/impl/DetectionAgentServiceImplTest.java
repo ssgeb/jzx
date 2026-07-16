@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruanzhu.doorhandlecatch.common.BusinessException;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.config.properties.ChatAssistantProperties;
 import com.ruanzhu.doorhandlecatch.dto.chat.AgentExecutionResult;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionDispositionRequest;
@@ -378,7 +379,7 @@ class DetectionAgentServiceImplTest {
 
         AgentExecutionResult result = service.executeConfirmedAction(
                 "将工单 WO-20260611-001 标记为返工",
-                "tester",
+                new TenantContext(1L, "tester"),
                 "sess_demo"
         );
 
@@ -413,7 +414,7 @@ class DetectionAgentServiceImplTest {
 
         AgentExecutionResult result = service.executeConfirmedAction(
                 "将工单 WO-20260611-001 标记为返工",
-                "alice",
+                new TenantContext(1L, "alice"),
                 "sess_demo"
         );
         assertThat(result.getContent()).contains("已将工单", "返工");

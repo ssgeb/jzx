@@ -3,6 +3,7 @@ package com.ruanzhu.doorhandlecatch.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruanzhu.doorhandlecatch.security.SensitiveDataSanitizer;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -43,12 +44,18 @@ public class Mem0Client {
     /**
      * 添加记忆
      */
-    public Map<String, Object> addMemory(String userId, String content, Map<String, Object> metadata) {
+    public Map<String, Object> addMemory(TenantContext tenant, String sessionId,
+                                         String content, Map<String, Object> metadata) {
+        return addMemory(buildScope(tenant, sessionId), content, metadata);
+    }
+
+    private Map<String, Object> addMemory(Map<String, Object> scope, String content,
+                                          Map<String, Object> metadata) {
         if (!enabled) return Collections.emptyMap();
 
         try {
             Map<String, Object> body = new HashMap<>();
-            body.put("user_id", userId);
+            body.putAll(scope);
             body.put("content", sensitiveDataSanitizer.sanitize(content));
             if (metadata != null) {
                 body.put("metadata", metadata);
@@ -69,7 +76,7 @@ public class Mem0Client {
                 JsonNode data = response.getBody().get("data");
                 if (data != null) {
                     String safeContent = sensitiveDataSanitizer.sanitize(content);
-                    log.info("记忆添加成功: userId={}, content={}", userId, safeContent.substring(0, Math.min(50, safeContent.length())));
+                    log.info("记忆添加成功: userId={}, content={}", scope.get("user_id"), safeContent.substring(0, Math.min(50, safeContent.length())));
                     return objectMapper.convertValue(data, Map.class);
                 }
             }
@@ -82,12 +89,17 @@ public class Mem0Client {
     /**
      * 搜索记忆
      */
-    public List<Map<String, Object>> searchMemories(String userId, String query, int topK) {
+    public List<Map<String, Object>> searchMemories(TenantContext tenant, String sessionId,
+                                                     String query, int topK) {
+        return searchMemories(buildScope(tenant, sessionId), query, topK);
+    }
+
+    private List<Map<String, Object>> searchMemories(Map<String, Object> scope, String query, int topK) {
         if (!enabled) return Collections.emptyList();
 
         try {
             Map<String, Object> body = new HashMap<>();
-            body.put("user_id", userId);
+            body.putAll(scope);
             body.put("query", query);
             body.put("top_k", topK);
 
@@ -116,7 +128,7 @@ public class Mem0Client {
                         }
                         memories.add(memory);
                     }
-                    log.debug("搜索到 {} 条记忆: userId={}, query={}", memories.size(), userId, query);
+                    log.debug("搜索到 {} 条记忆: userId={}, query={}", memories.size(), scope.get("user_id"), query);
                     return memories;
                 }
             }
@@ -193,8 +205,20 @@ public class Mem0Client {
      * 异步添加记忆（不阻塞主流程）
      */
     @Async
-    public void addMemoryAsync(String userId, String content, Map<String, Object> metadata) {
-        addMemory(userId, content, metadata);
+    public void addMemoryAsync(TenantContext tenant, String sessionId, String content,
+                               Map<String, Object> metadata) {
+        addMemory(tenant, sessionId, content, metadata);
+    }
+
+    Map<String, Object> buildScope(TenantContext tenant, String sessionId) {
+        if (tenant == null || sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("tenant and sessionId are required");
+        }
+        return Map.of(
+                "user_id", tenant.mem0UserId(),
+                "app_id", "doorhandlecatch",
+                "run_id", sessionId
+        );
     }
 
     private RestTemplate restTemplate() {

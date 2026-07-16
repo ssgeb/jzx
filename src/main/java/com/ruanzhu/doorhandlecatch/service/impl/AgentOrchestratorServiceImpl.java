@@ -10,6 +10,8 @@ import com.ruanzhu.doorhandlecatch.dto.chat.ChatPendingActionPayload;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatSendMessageRequest;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatStreamEvent;
 import com.ruanzhu.doorhandlecatch.entity.ChatPendingAction;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import com.ruanzhu.doorhandlecatch.service.AgentOrchestratorService;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.Mem0Client;
@@ -24,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.security.concurrent.DelegatingSecurityContextRunnable;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -53,7 +56,7 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
     private final RagKnowledgeService ragKnowledgeService;
     private final TaskExecutor taskExecutor;
     private final ChatAssistantProperties chatAssistantProperties;
-    private final Map<String, RateWindow> requestWindows = new ConcurrentHashMap<>();
+    private final Map<Long, RateWindow> requestWindows = new ConcurrentHashMap<>();
 
     @Value("${conversation.max-recent-messages:10}")
     private int maxRecentMessages;
@@ -81,19 +84,21 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
 
     @Override
     public ChatMessageResponse handleUserMessage(String username, ChatSendMessageRequest request) {
-        return handleUserMessageInternal(username, request, event -> {
+        TenantContext tenant = requireTenant(username);
+        return handleUserMessageInternal(tenant, request, event -> {
         });
     }
 
     @Override
     public SseEmitter streamUserMessage(String username, ChatSendMessageRequest request) {
+        TenantContext tenant = requireTenant(username);
         SseEmitter emitter = new SseEmitter(300_000L);
         Runnable streamTask = () -> {
             try {
                 AtomicBoolean streamedContent = new AtomicBoolean(false);
                 sendStreamEvent(emitter, "connected", ChatStreamEvent.status(request.getSessionId(), "已连接智能助手流式通道"));
                 ChatMessageResponse response = handleUserMessageInternal(
-                        username,
+                        tenant,
                         request,
                         event -> sendStreamEvent(emitter, event.getType(), event),
                         token -> {
@@ -136,16 +141,17 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         return emitter;
     }
 
-    private ChatMessageResponse handleUserMessageInternal(String username, ChatSendMessageRequest request,
+    private ChatMessageResponse handleUserMessageInternal(TenantContext tenant, ChatSendMessageRequest request,
                                                           Consumer<ChatStreamEvent> progressConsumer) {
-        return handleUserMessageInternal(username, request, progressConsumer, null);
+        return handleUserMessageInternal(tenant, request, progressConsumer, null);
     }
 
-    private ChatMessageResponse handleUserMessageInternal(String username,
+    private ChatMessageResponse handleUserMessageInternal(TenantContext tenant,
                                                           ChatSendMessageRequest request,
                                                           Consumer<ChatStreamEvent> progressConsumer,
                                                           Consumer<String> tokenConsumer) {
-        enforceRateLimit(username);
+        String username = tenant.username();
+        enforceRateLimit(tenant.userId());
 
         // 1. 确保会话存在
         if (!StringUtils.hasText(request.getSessionId())) {
@@ -157,11 +163,11 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         progressConsumer.accept(ChatStreamEvent.status(sessionId, "会话已准备"));
 
         // 2. 保存用户消息到数据库
-        chatSessionService.appendUserMessage(sessionId, request.getContent());
+        chatSessionService.appendUserMessage(tenant, sessionId, request.getContent());
         progressConsumer.accept(ChatStreamEvent.status(sessionId, "用户消息已保存"));
 
         // 3. 从 checkpoint 恢复多轮上下文，构建新 State
-        AgentState state = buildStateWithContext(sessionId, request, username);
+        AgentState state = buildStateWithContext(tenant, sessionId, request);
         if (tokenConsumer != null) {
             state.set(AgentState.KEY_STREAM_CONSUMER, tokenConsumer);
         }
@@ -177,7 +183,8 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
                 ? "已检索系统知识库，正在检索记忆"
                 : "系统知识库无强相关片段，正在检索记忆"));
 
-        List<Map<String, Object>> userMemories = mem0Client.searchMemories(username, request.getContent(), 5);
+        List<Map<String, Object>> userMemories = mem0Client.searchMemories(
+                tenant, sessionId, request.getContent(), 5);
         if (userMemories != null && !userMemories.isEmpty()) {
             state.set("user_memories", userMemories);
             String memoryContext = mem0Client.formatMemoriesAsContext(userMemories);
@@ -200,18 +207,18 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
             StateUpdater.appendMessage(result, "assistant", resultContent, maxRecentMessages);
             // 保存更新后的 state（包含本轮消息），但 invoke 后 checkpoint 已被 runLoop 保存，
             // 此处需再次保存以包含 assistant 消息
-            saveContextState(sessionId, result);
+            saveContextState(tenant, sessionId, result);
         }
 
         // 6.5 异步存储对话记忆（不阻塞主流程）
-        storeMemoryAsync(username, request.getContent(), resultContent);
+        storeMemoryAsync(tenant, sessionId, request.getContent(), resultContent);
 
         // 7. 处理结果
         String exitReason = result.getString(AgentState.KEY_EXIT_REASON);
 
         if (AgentState.EXIT_PENDING_CONFIRMATION.equals(exitReason)) {
             return chatSessionService.appendAssistantMessage(
-                    sessionId,
+                    tenant, sessionId,
                     resultContent,
                     result.getString(AgentState.KEY_RESULT_TYPE),
                     result.getString(AgentState.KEY_INTENT),
@@ -220,7 +227,7 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         }
 
         return chatSessionService.appendAssistantMessage(
-                sessionId,
+                tenant, sessionId,
                 resultContent,
                 result.getString(AgentState.KEY_RESULT_TYPE),
                 result.getString(AgentState.KEY_INTENT),
@@ -258,19 +265,20 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
 
     @Override
     public ChatMessageResponse confirmAction(String username, ChatConfirmActionRequest request) {
+        TenantContext tenant = requireTenant(username);
         chatSessionService.verifySessionOwner(username, request.getSessionId());
-        ChatPendingAction action = chatSessionService.getPendingAction(request.getSessionId(), request.getActionId());
+        ChatPendingAction action = chatSessionService.getPendingAction(tenant, request.getSessionId(), request.getActionId());
         ChatPendingActionPayload payload = readPayload(action.getActionPayloadJson());
         String claimedStatus = request.isConfirmed() ? "EXECUTING" : "CANCELLED";
         boolean claimed = chatSessionService.transitionPendingAction(
-                request.getSessionId(), request.getActionId(), "PENDING", claimedStatus, null);
+                tenant, request.getSessionId(), request.getActionId(), "PENDING", claimedStatus, null);
         if (!claimed) {
             throw new BusinessException("待确认动作正在处理或已处理，请勿重复提交");
         }
 
         if (!request.isConfirmed()) {
             return chatSessionService.appendAssistantMessage(
-                    request.getSessionId(),
+                    tenant, request.getSessionId(),
                     "已取消这次操作。如果你愿意，我可以继续帮你改成查询、总结，或者换一种执行方式。",
                     "TEXT",
                     payload.getIntent(),
@@ -279,29 +287,29 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         }
 
         try {
-            AgentState result = chatGraph.resume(request.getSessionId(), Map.of(
+            AgentState result = chatGraph.resume(tenant, request.getSessionId(), Map.of(
                     AgentState.KEY_CONFIRMED, true
             ));
 
             String resultContent = result.getString(AgentState.KEY_RESULT_CONTENT);
             if (StringUtils.hasText(resultContent)) {
                 StateUpdater.appendMessage(result, "assistant", resultContent, maxRecentMessages);
-                saveContextState(request.getSessionId(), result);
+                saveContextState(tenant, request.getSessionId(), result);
             }
 
             ChatMessageResponse response = chatSessionService.appendAssistantMessage(
-                    request.getSessionId(),
+                    tenant, request.getSessionId(),
                     resultContent,
                     result.getString(AgentState.KEY_RESULT_TYPE),
                     result.getString(AgentState.KEY_INTENT),
                     null
             );
             chatSessionService.transitionPendingAction(
-                    request.getSessionId(), request.getActionId(), "EXECUTING", "COMPLETED", null);
+                    tenant, request.getSessionId(), request.getActionId(), "EXECUTING", "COMPLETED", null);
             return response;
         } catch (RuntimeException ex) {
             chatSessionService.transitionPendingAction(
-                    request.getSessionId(), request.getActionId(), "EXECUTING", "FAILED",
+                    tenant, request.getSessionId(), request.getActionId(), "EXECUTING", "FAILED",
                     abbreviateError(ex.getMessage()));
             throw ex;
         }
@@ -310,8 +318,10 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
     // ---- 上下文恢复 ----
 
     /** 从 checkpoint 恢复多轮上下文，合并到新 State 中 */
-    private AgentState buildStateWithContext(String sessionId, ChatSendMessageRequest request, String username) {
-        AgentState state = AgentState.create(sessionId, request.getContent(), username);
+    private AgentState buildStateWithContext(TenantContext tenant, String sessionId,
+                                             ChatSendMessageRequest request) {
+        AgentState state = AgentState.create(sessionId, request.getContent(), tenant.username())
+                .set(AgentState.KEY_TENANT_USER_ID, tenant.userId());
         if (StringUtils.hasText(request.getCurrentRoute())) {
             state.set(AgentState.KEY_CURRENT_ROUTE, request.getCurrentRoute());
         }
@@ -320,7 +330,7 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         }
 
         try {
-            AgentState previous = checkpointer.load(sessionId);
+            AgentState previous = checkpointer.load(tenant, sessionId);
             if (previous != null) {
                 for (String key : CONTEXT_KEYS) {
                     Object value = previous.get(key, Object.class);
@@ -342,9 +352,9 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
     }
 
     /** 将当前 state 的上下文字段保存到 checkpoint */
-    private void saveContextState(String sessionId, AgentState state) {
+    private void saveContextState(TenantContext tenant, String sessionId, AgentState state) {
         try {
-            checkpointer.save(sessionId, state);
+            checkpointer.save(tenant, sessionId, state);
         } catch (Exception e) {
             log.warn("保存上下文 state 失败: {}", e.getMessage());
         }
@@ -362,7 +372,8 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
      * 异步存储对话记忆
      * 从用户消息和助手回复中提取有价值的信息存储到长期记忆
      */
-    private void storeMemoryAsync(String username, String userMessage, String assistantReply) {
+    private void storeMemoryAsync(TenantContext tenant, String sessionId,
+                                  String userMessage, String assistantReply) {
         try {
             // 构建对话内容用于记忆提取
             String conversationContent = String.format("用户: %s\n助手: %s", userMessage, assistantReply);
@@ -374,18 +385,18 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
             );
 
             // 异步存储，不阻塞主流程
-            mem0Client.addMemoryAsync(username, conversationContent, metadata);
+            mem0Client.addMemoryAsync(tenant, sessionId, conversationContent, metadata);
         } catch (Exception e) {
             log.warn("异步存储记忆失败: {}", e.getMessage());
         }
     }
 
-    private void enforceRateLimit(String username) {
+    private void enforceRateLimit(Long userId) {
         int maxRequests = Math.max(1, chatAssistantProperties.getMaxRequestsPerMinute() == null
                 ? 30
                 : chatAssistantProperties.getMaxRequestsPerMinute());
         long now = System.currentTimeMillis();
-        RateWindow window = requestWindows.compute(username, (key, existing) -> {
+        RateWindow window = requestWindows.compute(userId, (key, existing) -> {
             if (existing == null || now - existing.windowStartedAt >= 60_000L) {
                 return new RateWindow(now, 1);
             }
@@ -395,6 +406,17 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         if (window.count > maxRequests) {
             throw new BusinessException("聊天请求过于频繁，请稍后再试");
         }
+    }
+
+    private TenantContext requireTenant(String expectedUsername) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof TenantPrincipal principal)) {
+            throw new BusinessException(401, "登录身份缺少租户信息");
+        }
+        if (!principal.username().equals(expectedUsername)) {
+            throw new BusinessException(403, "登录身份与请求用户不一致");
+        }
+        return principal.tenantContext();
     }
 
     private static final class RateWindow {

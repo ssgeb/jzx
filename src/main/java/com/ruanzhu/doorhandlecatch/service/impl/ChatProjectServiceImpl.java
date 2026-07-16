@@ -9,8 +9,10 @@ import com.ruanzhu.doorhandlecatch.entity.ChatSession;
 import com.ruanzhu.doorhandlecatch.mapper.ChatProjectMapper;
 import com.ruanzhu.doorhandlecatch.mapper.ChatSessionMapper;
 import com.ruanzhu.doorhandlecatch.service.ChatProjectService;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -29,7 +31,11 @@ public class ChatProjectServiceImpl implements ChatProjectService {
 
     @Override
     public List<ChatProjectResponse> listUserProjects(String username) {
-        List<ChatProject> projects = chatProjectMapper.selectList(new LambdaQueryWrapper<ChatProject>()
+        LambdaQueryWrapper<ChatProject> query = new LambdaQueryWrapper<>();
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatProject::getUserId, userId);
+        else query.eq(ChatProject::getUsername, username);
+        List<ChatProject> projects = chatProjectMapper.selectList(query
                 .orderByAsc(ChatProject::getSortOrder)
                 .orderByDesc(ChatProject::getCreatedAt));
 
@@ -45,6 +51,7 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         ChatProject project = new ChatProject();
         project.setProjectId(projectId);
         project.setUsername(username);
+        project.setUserId(currentUserId());
         project.setName(request.getName());
         project.setDescription(request.getDescription());
         project.setColor(request.getColor() != null ? request.getColor() : "#4f6ef7");
@@ -76,10 +83,18 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         ChatProject project = getProjectOwnedByUser(username, projectId);
 
         // 将项目中的会话移出项目
-        List<ChatSession> sessions = chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getProjectId, projectId));
+        LambdaQueryWrapper<ChatSession> sessionQuery = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getProjectId, projectId);
+        Long userId = currentUserId();
+        if (userId != null) sessionQuery.eq(ChatSession::getUserId, userId);
+        else sessionQuery.eq(ChatSession::getUsername, username);
+        List<ChatSession> sessions = chatSessionMapper.selectList(sessionQuery);
 
         for (ChatSession session : sessions) {
+            boolean owned = userId != null
+                    ? userId.equals(session.getUserId())
+                    : username.equals(session.getUsername());
+            if (!owned) continue;
             session.setProjectId(null);
             session.setUpdatedAt(LocalDateTime.now());
             chatSessionMapper.updateById(session);
@@ -91,15 +106,19 @@ public class ChatProjectServiceImpl implements ChatProjectService {
 
     @Override
     public void moveSessionToProject(String username, String sessionId, String projectId) {
-        ChatSession session = chatSessionMapper.selectOne(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getSessionId, sessionId)
-                .last("limit 1"));
+        LambdaQueryWrapper<ChatSession> query = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getSessionId, sessionId);
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatSession::getUserId, userId);
+        else query.eq(ChatSession::getUsername, username);
+        ChatSession session = chatSessionMapper.selectOne(query.last("limit 1"));
 
         if (session == null) {
             throw new BusinessException(404, "会话不存在");
         }
 
         if (projectId != null) {
+            // 校验目标项目属于当前用户
             getProjectOwnedByUser(username, projectId);
         }
 
@@ -117,9 +136,12 @@ public class ChatProjectServiceImpl implements ChatProjectService {
      * 获取项目并校验所有权
      */
     private ChatProject getProjectOwnedByUser(String username, String projectId) {
-        ChatProject project = chatProjectMapper.selectOne(new LambdaQueryWrapper<ChatProject>()
-                .eq(ChatProject::getProjectId, projectId)
-                .last("limit 1"));
+        LambdaQueryWrapper<ChatProject> query = new LambdaQueryWrapper<ChatProject>()
+                .eq(ChatProject::getProjectId, projectId);
+        Long userId = currentUserId();
+        if (userId != null) query.eq(ChatProject::getUserId, userId);
+        else query.eq(ChatProject::getUsername, username);
+        ChatProject project = chatProjectMapper.selectOne(query.last("limit 1"));
 
         if (project == null) {
             throw new BusinessException(404, "项目不存在");
@@ -139,11 +161,19 @@ public class ChatProjectServiceImpl implements ChatProjectService {
         response.setUpdatedAt(project.getUpdatedAt() == null ? null : project.getUpdatedAt().format(TIME_FORMATTER));
 
         // 统计项目中的会话数
-        Long count = chatSessionMapper.selectCount(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getProjectId, project.getProjectId())
-                .eq(ChatSession::getStatus, "ACTIVE"));
+        LambdaQueryWrapper<ChatSession> countQuery = new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getProjectId, project.getProjectId());
+        if (project.getUserId() != null) countQuery.eq(ChatSession::getUserId, project.getUserId());
+        else countQuery.eq(ChatSession::getUsername, project.getUsername());
+        Long count = chatSessionMapper.selectCount(countQuery.eq(ChatSession::getStatus, "ACTIVE"));
         response.setSessionCount(count != null ? count.intValue() : 0);
 
         return response;
+    }
+
+    private Long currentUserId() {
+        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
+                ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return principal instanceof TenantPrincipal tenantPrincipal ? tenantPrincipal.userId() : null;
     }
 }

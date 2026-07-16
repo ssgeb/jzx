@@ -23,6 +23,7 @@ import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
 import com.ruanzhu.doorhandlecatch.service.ModelService;
 import com.ruanzhu.doorhandlecatch.service.OssStorageService;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -70,6 +71,9 @@ class DetectionTaskServiceImplTest {
     @Mock
     private DetectionTaskDispatchService detectionTaskDispatchService;
 
+    @Mock
+    private ChatSessionService chatSessionService;
+
     private OssProperties ossProperties;
     private DetectionTaskServiceImpl detectionTaskService;
 
@@ -91,7 +95,7 @@ class DetectionTaskServiceImplTest {
                 ossStorageService,
                 ossProperties,
                 detectionTaskDispatchService,
-                Mockito.mock(ChatSessionService.class),
+                chatSessionService,
                 new ObjectMapper(),
                 new com.ruanzhu.doorhandlecatch.security.DetectionTaskAccessPolicy()
         );
@@ -392,6 +396,28 @@ class DetectionTaskServiceImplTest {
         assertEquals(LocalDateTime.of(2026, 5, 20, 16, 12, 0), updatedTask.getStartedAt());
         assertEquals(LocalDateTime.of(2026, 5, 20, 16, 12, 8), updatedTask.getFinishedAt());
         assertEquals("PENDING_REVIEW", updatedTask.getFlowStatus());
+    }
+
+    @Test
+    void completionNotificationRestoresTenantFromPersistedSession() {
+        DetectionTask task = new DetectionTask();
+        task.setId(1L);
+        task.setTaskId("det_chat");
+        task.setSessionId("sess_alice_1");
+        task.setStatus("QUEUED");
+        task.setStage("QUEUED");
+        task.setTotalImages(1);
+        when(detectionTaskMapper.selectOne(any())).thenReturn(task);
+        TenantContext tenant = new TenantContext(42L, "alice");
+        when(chatSessionService.resolveTenantForSystemCallback(task.getSessionId())).thenReturn(tenant);
+
+        detectionTaskService.applyFinishedEvent(DetectionTaskFinishedEvent.builder()
+                .taskId(task.getTaskId()).eventId("event-chat").status("COMPLETED")
+                .totalImages(1).successfulImages(1).failedImages(0).build());
+
+        verify(chatSessionService).appendAssistantMessage(
+                eq(tenant), eq(task.getSessionId()), any(),
+                eq("TEXT"), eq("DETECTION_ACTION"), eq(null));
     }
 
     @Test

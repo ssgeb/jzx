@@ -10,6 +10,8 @@ import com.ruanzhu.doorhandlecatch.dto.chat.ChatMessageResponse;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatPendingActionPayload;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatSendMessageRequest;
 import com.ruanzhu.doorhandlecatch.entity.ChatPendingAction;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.ContextBuilder;
 import com.ruanzhu.doorhandlecatch.service.DeepSeekClient;
@@ -67,6 +69,8 @@ class AgentOrchestratorServiceImplTest {
                 Runnable::run,
                 new ChatAssistantProperties()
         );
+        SecurityContextHolder.getContext().setAuthentication(
+                authentication(1L, "admin"));
     }
 
     @AfterEach
@@ -90,10 +94,7 @@ class AgentOrchestratorServiceImplTest {
                 new ChatAssistantProperties()
         );
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        "alice",
-                        "N/A",
-                        List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))));
+                authentication(42L, "alice"));
         ChatSendMessageRequest request = new ChatSendMessageRequest();
         request.setSessionId("sess_alice_default");
         request.setContent("查询我的检测任务");
@@ -103,7 +104,9 @@ class AgentOrchestratorServiceImplTest {
             workerUsername.set(authentication == null ? null : authentication.getName());
             return null;
         }).when(chatSessionService).verifySessionOwner("alice", request.getSessionId());
-        Mockito.when(mem0Client.searchMemories("alice", request.getContent(), 5)).thenReturn(List.of());
+        Mockito.when(mem0Client.searchMemories(
+                new TenantContext(42L, "alice"), request.getSessionId(), request.getContent(), 5))
+                .thenReturn(List.of());
         AgentState result = AgentState.create(request.getSessionId(), request.getContent(), "alice")
                 .set(AgentState.KEY_RESULT_CONTENT, "查询完成")
                 .set(AgentState.KEY_RESULT_TYPE, "TEXT")
@@ -115,7 +118,8 @@ class AgentOrchestratorServiceImplTest {
         response.setMessageType("TEXT");
         response.setContent("查询完成");
         Mockito.when(chatSessionService.appendAssistantMessage(
-                request.getSessionId(), "查询完成", "TEXT", "DETECTION_QUERY", null)).thenReturn(response);
+                new TenantContext(42L, "alice"), request.getSessionId(),
+                "查询完成", "TEXT", "DETECTION_QUERY", null)).thenReturn(response);
 
         streamingService.streamUserMessage("alice", request);
         SecurityContextHolder.clearContext();
@@ -228,7 +232,7 @@ class AgentOrchestratorServiceImplTest {
                 .hasMessage("会话不存在");
 
         Mockito.verify(chatSessionService, Mockito.never())
-                .appendUserMessage(Mockito.anyString(), Mockito.anyString());
+                .appendUserMessage(Mockito.any(TenantContext.class), Mockito.anyString(), Mockito.anyString());
     }
 
     @Test
@@ -239,7 +243,11 @@ class AgentOrchestratorServiceImplTest {
 
         Mockito.when(ragKnowledgeService.retrieveContext(request.getContent()))
                 .thenReturn("[系统知识库检索结果]\n- 来源：常见问题\n业务预置数据导入");
-        Mockito.when(mem0Client.searchMemories(Mockito.eq("admin"), Mockito.eq(request.getContent()), Mockito.anyInt()))
+        Mockito.when(mem0Client.searchMemories(
+                        Mockito.eq(new TenantContext(1L, "admin")),
+                        Mockito.eq(request.getSessionId()),
+                        Mockito.eq(request.getContent()),
+                        Mockito.anyInt()))
                 .thenReturn(List.of());
 
         AgentState result = AgentState.create(request.getSessionId(), request.getContent(), "admin");
@@ -254,6 +262,7 @@ class AgentOrchestratorServiceImplTest {
         response.setMessageType("TEXT");
         response.setContent("可以开启业务预置数据后重启后端。\n\n来源：系统知识库/用户手册");
         Mockito.when(chatSessionService.appendAssistantMessage(
+                        Mockito.eq(new TenantContext(1L, "admin")),
                         Mockito.eq(request.getSessionId()),
                         Mockito.contains("来源：系统知识库/用户手册"),
                         Mockito.eq("TEXT"),
@@ -265,13 +274,27 @@ class AgentOrchestratorServiceImplTest {
         ChatMessageResponse actual = orchestratorService.handleUserMessage("admin", request);
 
         assertThat(actual.getContent()).contains("来源：系统知识库/用户手册");
+        Mockito.verify(mem0Client).searchMemories(
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getContent(), 5);
         Mockito.verify(chatSessionService).appendAssistantMessage(
+                Mockito.eq(new TenantContext(1L, "admin")),
                 Mockito.eq(request.getSessionId()),
                 Mockito.contains("来源：系统知识库/用户手册"),
                 Mockito.eq("TEXT"),
                 Mockito.eq("OPS_QUERY"),
                 Mockito.isNull()
         );
+        Mockito.verify(chatSessionService).appendUserMessage(
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getContent());
+    }
+
+    private static UsernamePasswordAuthenticationToken authentication(Long userId, String username) {
+        TenantPrincipal principal = new TenantPrincipal(
+                userId,
+                username,
+                "N/A",
+                List.of(new SimpleGrantedAuthority("ROLE_OPERATOR")));
+        return new UsernamePasswordAuthenticationToken(principal, "N/A", principal.getAuthorities());
     }
 
     @Test
@@ -290,49 +313,61 @@ class AgentOrchestratorServiceImplTest {
         action.setStatus("PENDING");
         action.setActionPayloadJson(objectMapper.writeValueAsString(payload));
 
-        Mockito.when(chatSessionService.getPendingAction(request.getSessionId(), request.getActionId()))
+        Mockito.when(chatSessionService.getPendingAction(
+                        new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId()))
                 .thenReturn(action);
         Mockito.when(chatSessionService.transitionPendingAction(
-                request.getSessionId(), request.getActionId(), "PENDING", "EXECUTING", null))
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId(),
+                "PENDING", "EXECUTING", null))
                 .thenReturn(false);
 
         assertThatThrownBy(() -> orchestratorService.confirmAction("admin", request))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("待确认动作正在处理或已处理，请勿重复提交");
 
-        Mockito.verify(chatGraph, Mockito.never()).resume(Mockito.anyString(), Mockito.anyMap());
+        Mockito.verify(chatGraph, Mockito.never()).resume(
+                Mockito.any(TenantContext.class), Mockito.anyString(), Mockito.anyMap());
     }
 
     @Test
     void successfulConfirmationCompletesClaimedAction() throws Exception {
         ChatConfirmActionRequest request = confirmationRequest();
-        Mockito.when(chatSessionService.getPendingAction(request.getSessionId(), request.getActionId()))
+        Mockito.when(chatSessionService.getPendingAction(
+                        new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId()))
                 .thenReturn(pendingAction(request));
         Mockito.when(chatSessionService.transitionPendingAction(
-                request.getSessionId(), request.getActionId(), "PENDING", "EXECUTING", null))
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId(),
+                "PENDING", "EXECUTING", null))
                 .thenReturn(true);
         AgentState result = AgentState.create(request.getSessionId(), "", "admin")
                 .set(AgentState.KEY_RESULT_CONTENT, "执行完成")
                 .set(AgentState.KEY_RESULT_TYPE, "TEXT")
                 .set(AgentState.KEY_INTENT, "DETECTION_ACTION");
-        Mockito.when(chatGraph.resume(Mockito.eq(request.getSessionId()), Mockito.anyMap()))
+        Mockito.when(chatGraph.resume(
+                        Mockito.eq(new TenantContext(1L, "admin")),
+                        Mockito.eq(request.getSessionId()), Mockito.anyMap()))
                 .thenReturn(result);
 
         orchestratorService.confirmAction("admin", request);
 
         Mockito.verify(chatSessionService).transitionPendingAction(
-                request.getSessionId(), request.getActionId(), "EXECUTING", "COMPLETED", null);
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId(),
+                "EXECUTING", "COMPLETED", null);
     }
 
     @Test
     void failedConfirmationRecordsFailureWithoutCompleting() throws Exception {
         ChatConfirmActionRequest request = confirmationRequest();
-        Mockito.when(chatSessionService.getPendingAction(request.getSessionId(), request.getActionId()))
+        Mockito.when(chatSessionService.getPendingAction(
+                        new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId()))
                 .thenReturn(pendingAction(request));
         Mockito.when(chatSessionService.transitionPendingAction(
-                request.getSessionId(), request.getActionId(), "PENDING", "EXECUTING", null))
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId(),
+                "PENDING", "EXECUTING", null))
                 .thenReturn(true);
-        Mockito.when(chatGraph.resume(Mockito.eq(request.getSessionId()), Mockito.anyMap()))
+        Mockito.when(chatGraph.resume(
+                        Mockito.eq(new TenantContext(1L, "admin")),
+                        Mockito.eq(request.getSessionId()), Mockito.anyMap()))
                 .thenThrow(new BusinessException("下游执行失败"));
 
         assertThatThrownBy(() -> orchestratorService.confirmAction("admin", request))
@@ -340,6 +375,7 @@ class AgentOrchestratorServiceImplTest {
                 .hasMessage("下游执行失败");
 
         Mockito.verify(chatSessionService).transitionPendingAction(
+                Mockito.eq(new TenantContext(1L, "admin")),
                 Mockito.eq(request.getSessionId()), Mockito.eq(request.getActionId()),
                 Mockito.eq("EXECUTING"), Mockito.eq("FAILED"), Mockito.contains("下游执行失败"));
     }

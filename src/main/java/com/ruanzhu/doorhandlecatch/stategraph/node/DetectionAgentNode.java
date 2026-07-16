@@ -29,7 +29,8 @@ public class DetectionAgentNode implements Node {
 
         AgentExecutionResult result;
         if (Boolean.TRUE.equals(confirmed)) {
-            result = detectionAgentService.executeConfirmedAction(prompt, username, sessionId);
+            result = detectionAgentService.executeConfirmedAction(
+                    prompt, state.requireTenantContext(), sessionId);
         } else {
             result = detectionAgentService.answer(enrichPromptWithRagContext(prompt, ragContext), username, tokenConsumer);
         }

@@ -4,6 +4,7 @@ import com.ruanzhu.doorhandlecatch.common.Result;
 import com.ruanzhu.doorhandlecatch.dto.LoginRequest;
 import com.ruanzhu.doorhandlecatch.dto.LoginResponse;
 import com.ruanzhu.doorhandlecatch.security.LoginRateLimiter;
+import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import com.ruanzhu.doorhandlecatch.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -86,6 +87,9 @@ public class AuthController {
         Map<String, Object> response = new HashMap<>();
         response.put("authenticated", true);
         response.put("username", username);
+        if (authentication.getPrincipal() instanceof TenantPrincipal principal) {
+            response.put("userId", principal.userId());
+        }
 
         return Result.success(response);
     }

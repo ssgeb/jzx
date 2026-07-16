@@ -21,6 +21,9 @@ public class ChatProject {
     @TableField("username")
     private String username;
 
+    @TableField("user_id")
+    private Long userId;
+
     @TableField("name")
     private String name;
 

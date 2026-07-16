@@ -9,6 +9,7 @@ import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadUrlItem;
 import com.ruanzhu.doorhandlecatch.dto.detection.DetectionUploadedFileItem;
 import com.ruanzhu.doorhandlecatch.entity.DetectionTask;
 import com.ruanzhu.doorhandlecatch.mapper.DetectionTaskMapper;
+import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -59,7 +60,8 @@ public class DetectionUploadAsyncService {
             });
 
     @Async
-    public void uploadAndConfirm(CreateDetectionTaskResponse createResp,
+    public void uploadAndConfirm(TenantContext tenant,
+                                  CreateDetectionTaskResponse createResp,
                                   List<DetectionUploadFileRequest> files,
                                   Path folder, String sessionId) {
         List<DetectionUploadUrlItem> uploadUrls = createResp.getUploadUrls();
@@ -72,8 +74,8 @@ public class DetectionUploadAsyncService {
             if (uploadPlanError != null) {
                 markUploadFailed(createResp.getTaskId(), uploadPlanError);
                 if (sessionId != null) {
-                    chatSessionService.appendAssistantMessage(
-                            sessionId,
+                    appendAssistantMessage(
+                            tenant, sessionId,
                             buildUploadPlanFailureMessage(createResp, uploadPlanError),
                             "TEXT",
                             "DETECTION_ACTION",
@@ -149,7 +151,7 @@ public class DetectionUploadAsyncService {
 
             String resultMsg = buildResultMessage(createResp, successCount, failCount, files.size());
             if (sessionId != null) {
-                chatSessionService.appendAssistantMessage(sessionId, resultMsg, "TEXT", "DETECTION_ACTION", null);
+                appendAssistantMessage(tenant, sessionId, resultMsg, "TEXT", "DETECTION_ACTION", null);
             }
         } catch (Exception e) {
             log.error("异步上传过程异常: taskId={}, error={}", createResp.getTaskId(), e.getMessage(), e);
@@ -158,12 +160,18 @@ public class DetectionUploadAsyncService {
                     String errMsg = "上传过程出现异常：" + e.getMessage()
                             + "\n已成功上传 " + successCount + "/" + safeFileCount(files) + " 张图片。"
                             + "\n任务ID：`" + createResp.getTaskId() + "`";
-                    chatSessionService.appendAssistantMessage(sessionId, errMsg, "TEXT", "DETECTION_ACTION", null);
+                    appendAssistantMessage(tenant, sessionId, errMsg, "TEXT", "DETECTION_ACTION", null);
                 } catch (Exception ex) {
                     log.error("发送上传异常通知失败: {}", ex.getMessage());
                 }
             }
         }
+    }
+
+    private void appendAssistantMessage(TenantContext tenant, String sessionId, String content,
+                                        String messageType, String intent, String actionId) {
+        chatSessionService.appendAssistantMessage(
+                tenant, sessionId, content, messageType, intent, actionId);
     }
 
     private String validateUploadPlan(List<DetectionUploadFileRequest> files,
