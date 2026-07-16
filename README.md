@@ -53,7 +53,7 @@ conda env update -n leetcode -f environment.yml
 .\scripts\run-python.ps1 frontend\tests\test_frontend.py
 
 # 执行 Python 智能体测试
-.\scripts\run-python.ps1 tests_python\test_agent.py
+.\scripts\run-python.ps1 scripts\diagnostics\agent_live_smoke.py
 
 # 启动 Kafka 检测 worker
 .\scripts\run-python.ps1 kafka_detection_worker.py
