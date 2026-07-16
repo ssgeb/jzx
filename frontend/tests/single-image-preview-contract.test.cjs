@@ -1,10 +1,7 @@
 const assert = require('assert')
-const fs = require('fs')
-const path = require('path')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const read = (...segments) => fs.readFileSync(path.join(__dirname, '..', ...segments), 'utf8')
-
-const composableSource = read('src', 'composables', 'useSingleImageUploadPreview.js')
+const composableSource = readFrontendFile('src', 'composables', 'useSingleImageUploadPreview.js')
 
 assert.match(composableSource, /URL\.createObjectURL\(file\)/)
 assert.match(composableSource, /URL\.revokeObjectURL/)
@@ -24,14 +21,14 @@ const pages = [
 ]
 
 for (const pagePath of pages) {
-  const source = read(...pagePath)
+  const source = readFrontendFile(...pagePath)
   assert.match(source, /useSingleImageUploadPreview/)
   assert.doesNotMatch(source, /const beforeUpload = \(file\) =>/)
   assert.doesNotMatch(source, /originFileObj:\s*file/)
 }
 
 for (const pagePath of pages.slice(0, 2)) {
-  const source = read(...pagePath)
+  const source = readFrontendFile(...pagePath)
   assert.match(source, /:auto-upload="false"/)
   assert.match(source, /:on-change="handleUploadChange"/)
   assert.match(source, /:limit="1"/)
@@ -41,10 +38,9 @@ for (const pagePath of pages.slice(0, 2)) {
   assert.doesNotMatch(source, /:max-count=/)
 }
 
-const activeDetectionPage = read('src', 'views', 'ImageDetection.vue')
-const kafkaServicePath = path.join(__dirname, '..', 'src', 'services', 'singleImageKafkaDetection.js')
-assert.ok(fs.existsSync(kafkaServicePath), 'single image Kafka detection service must exist')
-const kafkaService = fs.readFileSync(kafkaServicePath, 'utf8')
+const activeDetectionPage = readFrontendFile('src', 'views', 'ImageDetection.vue')
+const kafkaService = readFrontendFile('src', 'services', 'singleImageKafkaDetection.js')
+assert.ok(kafkaService, 'single image Kafka detection service must exist')
 assert.match(kafkaService, /taskType:\s*'SINGLE'/)
 assert.match(kafkaService, /\/api\/detection\/tasks/)
 assert.match(kafkaService, /\/uploaded/)

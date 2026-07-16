@@ -1,11 +1,7 @@
-const fs = require('fs')
-const path = require('path')
 const assert = require('assert')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const source = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'components', 'chat', 'ChatBusinessCard.vue'),
-  'utf8'
-)
+const source = readFrontendFile('src', 'components', 'chat', 'ChatBusinessCard.vue')
 
 assert.match(source, /payload\.value\.sources/)
 assert.match(source, /source-strip/)

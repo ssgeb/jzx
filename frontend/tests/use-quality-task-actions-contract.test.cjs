@@ -1,10 +1,7 @@
 const assert = require('assert')
-const fs = require('fs')
-const path = require('path')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const read = (...segments) => fs.readFileSync(path.join(__dirname, '..', ...segments), 'utf8')
-
-const composableSource = read('src', 'composables', 'useQualityTaskActions.js')
+const composableSource = readFrontendFile('src', 'composables', 'useQualityTaskActions.js')
 const qualityPages = [
   'QualityQueue.vue',
   'DefectEvidenceGallery.vue',
@@ -49,7 +46,7 @@ assert.match(composableSource, /submitDetectionReworkResult/)
 assert.match(composableSource, /shouldDefaultRecheck/)
 
 for (const page of qualityPages) {
-  const source = read('src', 'views', 'quality', page)
+  const source = readFrontendFile('src', 'views', 'quality', page)
   assert.match(source, /useQualityTaskActions\(\{/)
   assert.match(source, /refreshQualityQueue: refreshQualityQueueIfVisible/)
   assert.match(source, /refreshDefectGallery: refreshDefectGalleryIfVisible/)

@@ -1,19 +1,9 @@
-const fs = require('fs')
-const path = require('path')
 const assert = require('assert')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const storeSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'stores', 'chatAssistant.js'),
-  'utf8'
-)
-const listSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'components', 'chat', 'ChatMessageList.vue'),
-  'utf8'
-)
-const cardSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'components', 'chat', 'ChatPendingActionCard.vue'),
-  'utf8'
-)
+const storeSource = readFrontendFile('src', 'stores', 'chatAssistant.js')
+const listSource = readFrontendFile('src', 'components', 'chat', 'ChatMessageList.vue')
+const cardSource = readFrontendFile('src', 'components', 'chat', 'ChatPendingActionCard.vue')
 
 assert.match(storeSource, /confirmingActionIds/)
 assert.match(storeSource, /confirmingActionIds\.value\.has\(actionId\)/)

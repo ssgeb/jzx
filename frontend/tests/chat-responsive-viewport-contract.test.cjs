@@ -1,17 +1,11 @@
 const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const path = require('node:path')
 const test = require('node:test')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const readFrontend = (...segments) => fs.readFileSync(
-  path.join(__dirname, '..', ...segments),
-  'utf8'
-)
-
-const launcherSource = readFrontend('src', 'components', 'chat', 'ChatAssistantLauncher.vue')
-const drawerSource = readFrontend('src', 'components', 'chat', 'ChatAssistantDrawer.vue')
-const sidebarSource = readFrontend('src', 'components', 'chat', 'ChatSidebar.vue')
-const layoutSource = readFrontend('src', 'layout', 'index.vue')
+const launcherSource = readFrontendFile('src', 'components', 'chat', 'ChatAssistantLauncher.vue')
+const drawerSource = readFrontendFile('src', 'components', 'chat', 'ChatAssistantDrawer.vue')
+const sidebarSource = readFrontendFile('src', 'components', 'chat', 'ChatSidebar.vue')
+const layoutSource = readFrontendFile('src', 'layout', 'index.vue')
 
 test('assistant launcher clamps persisted coordinates on mount and resize', () => {
   assert.match(launcherSource, /ref="launcherRef"/)

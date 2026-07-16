@@ -1,9 +1,7 @@
-const fs = require('fs')
-const path = require('path')
 const assert = require('assert')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const filePath = path.join(__dirname, '..', 'src', 'layout', 'index.vue')
-const source = fs.readFileSync(filePath, 'utf8')
+const source = readFrontendFile('src', 'layout', 'index.vue')
 
 assert.match(
   source,

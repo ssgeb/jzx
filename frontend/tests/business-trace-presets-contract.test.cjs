@@ -1,32 +1,28 @@
 const assert = require('assert')
-const fs = require('fs')
-const path = require('path')
+const { readFrontendFile, readProjectFile } = require('./helpers/project-source.cjs')
 
-const readFrontend = (...segments) => fs.readFileSync(path.join(__dirname, '..', ...segments), 'utf8')
-const readRepo = (...segments) => fs.readFileSync(path.join(__dirname, '..', '..', ...segments), 'utf8')
-
-const presetSource = readFrontend('src', 'config', 'businessTracePresets.js')
-const traceComposableSource = readFrontend('src', 'composables', 'useTraceReports.js')
-const businessSeedEmptyHintSource = readFrontend('src', 'components', 'BusinessSeedEmptyHint.vue')
-const userManualSource = readFrontend('src', 'views', 'UserManual.vue')
-const dbReadmeSource = readRepo('src', 'main', 'resources', 'db', 'README.md')
-const userGuideSource = readRepo('docs', 'system-user-guide.md')
-const businessSeedStartScript = readRepo('scripts', 'start-backend-with-business-seed.ps1')
+const presetSource = readFrontendFile('src', 'config', 'businessTracePresets.js')
+const traceComposableSource = readFrontendFile('src', 'composables', 'useTraceReports.js')
+const businessSeedEmptyHintSource = readFrontendFile('src', 'components', 'BusinessSeedEmptyHint.vue')
+const userManualSource = readFrontendFile('src', 'views', 'UserManual.vue')
+const dbReadmeSource = readProjectFile('src', 'main', 'resources', 'db', 'README.md')
+const userGuideSource = readProjectFile('docs', 'system-user-guide.md')
+const businessSeedStartScript = readProjectFile('scripts', 'start-backend-with-business-seed.ps1')
 const businessSeedSources = [
-  readRepo('src', 'main', 'resources', 'db', 'business-seed-new-features.sql'),
-  readRepo('src', 'main', 'resources', 'db', 'business-seed-more-features.sql'),
-  readRepo('src', 'main', 'resources', 'db', 'business-seed-trace-rich.sql')
+  readProjectFile('src', 'main', 'resources', 'db', 'business-seed-new-features.sql'),
+  readProjectFile('src', 'main', 'resources', 'db', 'business-seed-more-features.sql'),
+  readProjectFile('src', 'main', 'resources', 'db', 'business-seed-trace-rich.sql')
 ]
 const normalizedPages = [
-  readFrontend('src', 'views', 'ImageDetection.vue'),
-  readFrontend('src', 'views', 'quality', 'QualityQueue.vue'),
-  readFrontend('src', 'views', 'quality', 'DefectEvidenceGallery.vue'),
-  readFrontend('src', 'views', 'quality', 'WorkOrderTrace.vue'),
-  readFrontend('src', 'views', 'quality', 'BatchTrace.vue'),
-  readFrontend('src', 'views', 'inspection', 'InspectionHistory.vue'),
-  readFrontend('src', 'views', 'inspection', 'InspectionWorkbench.vue')
+  readFrontendFile('src', 'views', 'ImageDetection.vue'),
+  readFrontendFile('src', 'views', 'quality', 'QualityQueue.vue'),
+  readFrontendFile('src', 'views', 'quality', 'DefectEvidenceGallery.vue'),
+  readFrontendFile('src', 'views', 'quality', 'WorkOrderTrace.vue'),
+  readFrontendFile('src', 'views', 'quality', 'BatchTrace.vue'),
+  readFrontendFile('src', 'views', 'inspection', 'InspectionHistory.vue'),
+  readFrontendFile('src', 'views', 'inspection', 'InspectionWorkbench.vue')
 ]
-const migrationSource = readRepo('src', 'main', 'resources', 'db', 'migration-V13-business-seed-data-normalization.sql')
+const migrationSource = readProjectFile('src', 'main', 'resources', 'db', 'migration-V13-business-seed-data-normalization.sql')
 
 assert.match(presetSource, /businessWorkOrderNos/)
 assert.match(presetSource, /businessBatchNos/)

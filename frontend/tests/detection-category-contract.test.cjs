@@ -1,19 +1,9 @@
-const fs = require('fs')
-const path = require('path')
 const assert = require('assert')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const imageDetectionSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'views', 'ImageDetection.vue'),
-  'utf8'
-)
-const homeSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'views', 'Home.vue'),
-  'utf8'
-)
-const detectionTaskStoreSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'stores', 'taskStore.js'),
-  'utf8'
-)
+const imageDetectionSource = readFrontendFile('src', 'views', 'ImageDetection.vue')
+const homeSource = readFrontendFile('src', 'views', 'Home.vue')
+const detectionTaskStoreSource = readFrontendFile('src', 'stores', 'taskStore.js')
 
 for (const pair of [
   ['Normal', '正常'],

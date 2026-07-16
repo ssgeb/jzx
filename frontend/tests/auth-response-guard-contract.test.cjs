@@ -1,8 +1,7 @@
 const assert = require('assert')
-const fs = require('fs')
-const path = require('path')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'stores', 'user.js'), 'utf8')
+const source = readFrontendFile('src', 'stores', 'user.js')
 
 assert.match(source, /error\.response\?\.status === 401/)
 assert.doesNotMatch(source, /\[401,\s*403\]\.includes/)

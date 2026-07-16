@@ -1,14 +1,6 @@
 const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const path = require('node:path')
 const test = require('node:test')
-
-const projectRoot = path.resolve(__dirname, '..', '..')
-
-const readProjectFile = (...segments) => {
-  const filePath = path.join(projectRoot, ...segments)
-  return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : ''
-}
+const { readProjectFile } = require('./helpers/project-source.cjs')
 
 test('declares leetcode as the repository Python environment', () => {
   const environment = readProjectFile('environment.yml')

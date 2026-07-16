@@ -1,15 +1,8 @@
-const fs = require('fs')
-const path = require('path')
 const assert = require('assert')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const apiSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'api', 'chatAssistant.js'),
-  'utf8'
-)
-const composerSource = fs.readFileSync(
-  path.join(__dirname, '..', 'src', 'components', 'chat', 'ChatComposer.vue'),
-  'utf8'
-)
+const apiSource = readFrontendFile('src', 'api', 'chatAssistant.js')
+const composerSource = readFrontendFile('src', 'components', 'chat', 'ChatComposer.vue')
 
 assert.match(apiSource, /transcribeChatVoice/)
 assert.match(apiSource, /\/api\/chat-assistant\/voice\/transcribe/)

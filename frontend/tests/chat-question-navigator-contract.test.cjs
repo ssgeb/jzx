@@ -1,13 +1,9 @@
 const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const path = require('node:path')
 const test = require('node:test')
-
-const frontendRoot = path.join(__dirname, '..')
-const read = (...segments) => fs.readFileSync(path.join(frontendRoot, ...segments), 'utf8')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
 test('question helper keeps only user messages and builds stable keys', async () => {
-  const helperSource = read('src', 'utils', 'chatMessageNavigation.js')
+  const helperSource = readFrontendFile('src', 'utils', 'chatMessageNavigation.js')
   const helperUrl = `data:text/javascript;base64,${Buffer.from(helperSource).toString('base64')}`
   const { buildChatMessageKey, buildQuestionItems } = await import(helperUrl)
   const messages = [
@@ -24,7 +20,7 @@ test('question helper keeps only user messages and builds stable keys', async ()
 })
 
 test('navigator is accessible and supports dismiss interactions', () => {
-  const source = read('src', 'components', 'chat', 'ChatQuestionNavigator.vue')
+  const source = readFrontendFile('src', 'components', 'chat', 'ChatQuestionNavigator.vue')
   assert.match(source, /aria-label="查看历史提问"/)
   assert.match(source, /:aria-expanded="String\(open\)"/)
   assert.match(source, /aria-controls="chat-question-list"/)
@@ -35,7 +31,7 @@ test('navigator is accessible and supports dismiss interactions', () => {
 })
 
 test('message list exposes smooth location and temporary highlight', () => {
-  const source = read('src', 'components', 'chat', 'ChatMessageList.vue')
+  const source = readFrontendFile('src', 'components', 'chat', 'ChatMessageList.vue')
   assert.match(source, /:data-message-key="buildChatMessageKey\(item, idx\)"/)
   assert.match(source, /scrollIntoView/)
   assert.match(source, /question-locate-highlight/)
@@ -44,7 +40,7 @@ test('message list exposes smooth location and temporary highlight', () => {
 })
 
 test('drawer integrates current-session questions with the message list', () => {
-  const source = read('src', 'components', 'chat', 'ChatAssistantDrawer.vue')
+  const source = readFrontendFile('src', 'components', 'chat', 'ChatAssistantDrawer.vue')
   assert.match(source, /ChatQuestionNavigator/)
   assert.match(source, /buildQuestionItems\(chatStore\.messages\)/)
   assert.match(source, /messageListRef\.value\?\.locateMessage\(key\)/)

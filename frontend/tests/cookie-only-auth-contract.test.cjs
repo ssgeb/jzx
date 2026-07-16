@@ -1,13 +1,10 @@
 const assert = require('assert')
-const fs = require('fs')
-const path = require('path')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const read = (...segments) => fs.readFileSync(path.join(__dirname, '..', ...segments), 'utf8')
-
-const userStore = read('src', 'stores', 'user.js')
-const requestApi = read('src', 'api', 'request.js')
-const chatApi = read('src', 'api', 'chatAssistant.js')
-const router = read('src', 'router', 'index.js')
+const userStore = readFrontendFile('src', 'stores', 'user.js')
+const requestApi = readFrontendFile('src', 'api', 'request.js')
+const chatApi = readFrontendFile('src', 'api', 'chatAssistant.js')
+const router = readFrontendFile('src', 'router', 'index.js')
 
 assert.doesNotMatch(userStore, /localStorage\.setItem\(['"]token['"]/)
 assert.doesNotMatch(userStore, /localStorage\.getItem\(['"]token['"]/)

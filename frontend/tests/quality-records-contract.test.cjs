@@ -1,11 +1,8 @@
 const assert = require('assert')
-const fs = require('fs')
-const path = require('path')
+const { readFrontendFile } = require('./helpers/project-source.cjs')
 
-const read = (...segments) => fs.readFileSync(path.join(__dirname, '..', ...segments), 'utf8')
-
-const recordsSource = read('src', 'utils', 'qualityRecords.js')
-const imageDetectionSource = read('src', 'views', 'ImageDetection.vue')
+const recordsSource = readFrontendFile('src', 'utils', 'qualityRecords.js')
+const imageDetectionSource = readFrontendFile('src', 'views', 'ImageDetection.vue')
 
 for (const exportName of [
   'normalizeQualityQueueRecord',
