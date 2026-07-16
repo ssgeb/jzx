@@ -18,7 +18,7 @@
 - Create `docs/project-highlights/03-kafka-image-detection.md`: OSS upload, Kafka events, Python Worker, ONNX inference, offset handling, and idempotency.
 - Create `docs/project-highlights/04-model-quality-traceability.md`: model validation/lifecycle and the review-disposition-rework traceability workflow.
 - Create `docs/project-highlights/05-nginx-docker-deployment.md`: frontend/backend images, Compose topology, Nginx proxy/load balancing, SSE, and security.
-- Modify `docs/project-highlights-interview-guide.md`: add links to the five deep-dive guides while retaining its overview role.
+- Modify `docs/项目亮点与面试指南.md`: add links to the five deep-dive guides while retaining its overview role.
 
 ### Task 1: Create the documentation index
 
@@ -225,7 +225,7 @@ git commit -m "docs: explain nginx compose deployment"
 ### Task 7: Link the overview and run documentation verification
 
 **Files:**
-- Modify: `docs/project-highlights-interview-guide.md`
+- Modify: `docs/项目亮点与面试指南.md`
 - Verify: `docs/project-highlights/*.md`
 
 - [ ] **Step 1: Add a deep-dive navigation section to the overview**
@@ -237,8 +237,8 @@ Link all five documents and clarify that the overview is for quick review while 
 Run:
 
 ```powershell
-rg -n "TODO|TBD|待补充|占位" docs/project-highlights docs/project-highlights-interview-guide.md
-$links = rg -o "\]\(([^)#]+\.md)(#[^)]+)?\)" docs/project-highlights docs/project-highlights-interview-guide.md
+rg -n "TODO|TBD|待补充|占位" docs/project-highlights docs/项目亮点与面试指南.md
+$links = rg -o "\]\(([^)#]+\.md)(#[^)]+)?\)" docs/project-highlights docs/项目亮点与面试指南.md
 ```
 
 Expected: no placeholders; every relative Markdown file target resolves from its containing document.
@@ -261,6 +261,6 @@ Expected: no whitespace errors; only intended documentation files remain changed
 - [ ] **Step 5: Commit the overview links and final verification adjustments**
 
 ```powershell
-git add docs/project-highlights-interview-guide.md docs/project-highlights
+git add docs/项目亮点与面试指南.md docs/project-highlights
 git commit -m "docs: complete project highlight deep dives"
 ```

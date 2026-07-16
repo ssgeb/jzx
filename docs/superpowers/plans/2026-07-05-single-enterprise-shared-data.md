@@ -557,7 +557,7 @@ On a staging MySQL 8 database, apply V15, run `SHOW INDEX FROM operation_audit_l
 
 Run: `git status --short`
 
-Expected: no uncommitted feature changes; the pre-existing untracked `docs/project-highlights-interview-guide.md` remains untouched.
+Expected: no uncommitted feature changes; the pre-existing untracked `docs/项目亮点与面试指南.md` remains untouched.
 
 Run: `git log --oneline -10`
 

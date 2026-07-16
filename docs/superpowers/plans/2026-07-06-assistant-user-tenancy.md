@@ -369,4 +369,4 @@ Alice creates a project/session/message/memory. Bob must receive 404 for Alice's
 
 Run: `git status --short`
 
-Expected: no uncommitted feature changes; pre-existing `docs/project-highlights-interview-guide.md` remains untouched.
+Expected: no uncommitted feature changes; pre-existing `docs/项目亮点与面试指南.md` remains untouched.
