@@ -9,6 +9,9 @@ import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.DetectionTaskDispatchService;
 import com.ruanzhu.doorhandlecatch.service.ModelService;
 import com.ruanzhu.doorhandlecatch.service.OssStorageService;
+import org.mockito.Mockito;
+import org.mockito.MockitoSession;
+import org.mockito.quality.Strictness;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,18 +19,29 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
-import static org.mockito.Mockito.mock;
-
 final class DetectionTaskServiceFixture {
 
-    final DetectionTaskMapper detectionTaskMapper = mock(DetectionTaskMapper.class);
-    final ModelInfoMapper modelInfoMapper = mock(ModelInfoMapper.class);
-    final ModelService modelService = mock(ModelService.class);
-    final OssStorageService ossStorageService = mock(OssStorageService.class);
-    final DetectionTaskDispatchService detectionTaskDispatchService = mock(DetectionTaskDispatchService.class);
-    final ChatSessionService chatSessionService = mock(ChatSessionService.class);
+    private final MockitoSession mockitoSession;
+    final DetectionTaskMapper detectionTaskMapper;
+    final ModelInfoMapper modelInfoMapper;
+    final ModelService modelService;
+    final OssStorageService ossStorageService;
+    final DetectionTaskDispatchService detectionTaskDispatchService;
+    final ChatSessionService chatSessionService;
 
     DetectionTaskServiceImpl service;
+
+    DetectionTaskServiceFixture() {
+        mockitoSession = Mockito.mockitoSession()
+                .strictness(Strictness.STRICT_STUBS)
+                .startMocking();
+        detectionTaskMapper = Mockito.mock(DetectionTaskMapper.class);
+        modelInfoMapper = Mockito.mock(ModelInfoMapper.class);
+        modelService = Mockito.mock(ModelService.class);
+        ossStorageService = Mockito.mock(OssStorageService.class);
+        detectionTaskDispatchService = Mockito.mock(DetectionTaskDispatchService.class);
+        chatSessionService = Mockito.mock(ChatSessionService.class);
+    }
 
     void setUp() {
         SecurityContextHolder.clearContext();
@@ -57,6 +71,10 @@ final class DetectionTaskServiceFixture {
     }
 
     void tearDown() {
-        SecurityContextHolder.clearContext();
+        try {
+            mockitoSession.finishMocking();
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 }
