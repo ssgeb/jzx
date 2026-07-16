@@ -31,13 +31,19 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor 
                 envMap.put(entry.getKey(), entry.getValue());
             });
 
-            // 添加为高优先级属性源（会覆盖 application.yml 中的默认值）
-            environment.getPropertySources()
-                    .addFirst(new MapPropertySource("dotenvProperties", envMap));
+            addDotenvProperties(environment, envMap);
 
             log.info("已加载 .env 文件，共 {} 个变量", envMap.size());
         } catch (Exception e) {
             log.warn("加载 .env 文件失败: {}", e.getMessage());
         }
+    }
+
+    static void addDotenvProperties(ConfigurableEnvironment environment, Map<String, Object> envMap) {
+        if (envMap.isEmpty()) {
+            return;
+        }
+        environment.getPropertySources()
+                .addLast(new MapPropertySource("dotenvProperties", envMap));
     }
 }

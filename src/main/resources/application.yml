@@ -8,7 +8,6 @@
 
 spring:
   main:
-    allow-bean-definition-overriding: true
     banner-mode: console
   mvc:
     pathmatch:
@@ -45,13 +44,6 @@ spring:
   cache:
     type: ${SPRING_CACHE_TYPE:simple}
     cache-names: dashboard,model,device,employee,detection-task,chat-session
-  sql:
-    init:
-      mode: never
-      schema-locations: classpath:db/reset-schema.sql,classpath:db/reset-employee-structure.sql
-      continue-on-error: true
-      encoding: UTF-8
-      data-locations: classpath:db/complete-data.sql,classpath:db/add-detection-data.sql,classpath:db/add-missing-years-data.sql
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
@@ -70,6 +62,8 @@ spring:
       enabled: always
 
 mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.ruanzhu.doorhandlecatch.entity
   global-config:
     db-config:
       schema: false
@@ -79,14 +73,6 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     call-setters-on-nulls: true
     log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.slf4j.Slf4jImpl}
-
-mybatis:
-  mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.ruanzhu.doorhandlecatch.entity
-  configuration:
-    map-underscore-to-camel-case: true
-    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.slf4j.Slf4jImpl}
-    call-setters-on-nulls: true
 
 springdoc:
   swagger-ui:
