@@ -6,7 +6,7 @@ const projectRoot = path.resolve(frontendRoot, '..')
 
 const readUtf8 = (root, segments) => {
   const filePath = path.join(root, ...segments)
-  return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : ''
+  return fs.readFileSync(filePath, 'utf8')
 }
 
 const readFrontendFile = (...segments) => readUtf8(frontendRoot, segments)
