@@ -92,10 +92,10 @@ executeWithRetry(String nodeName, Node node, AgentState state)
 
 1. 状态中不存在 `error`。
 2. `result_content` 是非空白字符串。
-3. `result_type` 是允许的类型：`TEXT` 或 `PENDING_ACTION`。
+3. `result_type` 是允许的类型：`TEXT`、`BUSINESS_CARD` 或 `PENDING_ACTION`。
 4. `intent` 是非空白字符串。
 
-普通专业 Agent 和槽位追问目前应产生 `TEXT`；`PENDING_ACTION` 由人工确认节点直接中断，不进入质量门禁，允许该类型是为了保持状态契约兼容。
+普通专业 Agent 和槽位追问可以产生 `TEXT`，检测与运维 Agent 还会产生 `BUSINESS_CARD`；`PENDING_ACTION` 由人工确认节点直接中断，不进入质量门禁，允许该类型是为了保持状态契约兼容。
 
 检查通过时节点不设置 `exit_reason`，让图继续进入 `ResponderNode`。检查失败时抛出 `StateGraphException`，由 `CompiledGraph` 统一记录错误、设置 `EXIT_ERROR`、执行 Fallback 并保存 Checkpoint。
 
@@ -199,4 +199,3 @@ slotFilling（需要追问）─┘
 - 正常回答只有在 Responder 执行后才标记为 `COMPLETE`。
 - 等待确认、错误和运行守卫的退出语义保持不变。
 - 新增测试通过，现有 Maven 测试无回归。
-
