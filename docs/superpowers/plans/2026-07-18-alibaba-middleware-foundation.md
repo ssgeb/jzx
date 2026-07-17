@@ -330,7 +330,7 @@ git commit -m "build: create transitional Maven reactor"
 - Create: `event-contracts/**`
 - Test: `event-contracts/src/test/java/com/ruanzhu/doorhandlecatch/events/EventEnvelopeTest.java`
 
-- [ ] **Step 1: Write the failing event-envelope test**
+- [x] **Step 1: Write the failing event-envelope test**
 
 ```java
 package com.ruanzhu.doorhandlecatch.events;
@@ -359,7 +359,7 @@ class EventEnvelopeTest {
 }
 ```
 
-- [ ] **Step 2: Verify the test fails because EventEnvelope is absent**
+- [x] **Step 2: Verify the test fails because EventEnvelope is absent**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl event-contracts -Dtest=EventEnvelopeTest test
@@ -367,7 +367,7 @@ class EventEnvelopeTest {
 
 Expected: compilation failure for missing `EventEnvelope`.
 
-- [ ] **Step 3: Implement the immutable event envelope**
+- [x] **Step 3: Implement the immutable event envelope**
 
 ```java
 package com.ruanzhu.doorhandlecatch.events;
@@ -456,7 +456,7 @@ public final class RequestContext {
 }
 ```
 
-- [ ] **Step 4: Run shared-module tests**
+- [x] **Step 4: Run shared-module tests**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl platform-common,platform-security,event-contracts test
@@ -464,7 +464,7 @@ public final class RequestContext {
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit shared contracts**
+- [x] **Step 5: Commit shared contracts**
 
 ```powershell
 git add platform-common platform-security event-contracts
