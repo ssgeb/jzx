@@ -2,7 +2,7 @@ package com.ruanzhu.doorhandlecatch.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.ruanzhu.doorhandlecatch.entity.Device;
 import com.ruanzhu.doorhandlecatch.entity.DeviceUsageRecord;
 import com.ruanzhu.doorhandlecatch.entity.Employee;
@@ -367,7 +367,7 @@ public class DeviceUsageRecordServiceImpl extends ServiceImpl<DeviceUsageRecordM
             device.setEmployeeId(null);
             deviceMapper.updateById(device);
         }
-        
+
         return updated;
     }
-} 
+}

@@ -2,7 +2,7 @@ package com.ruanzhu.doorhandlecatch.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.ruanzhu.doorhandlecatch.common.BusinessException;
 import com.ruanzhu.doorhandlecatch.entity.ModelInfo;
 import com.ruanzhu.doorhandlecatch.mapper.ModelInfoMapper;

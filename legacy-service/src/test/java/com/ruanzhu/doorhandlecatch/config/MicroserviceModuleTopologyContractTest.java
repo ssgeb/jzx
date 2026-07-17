@@ -9,7 +9,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class MicroserviceModuleTopologyContractTest {
 
-    private final Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+    private final Path root = findProjectRoot();
+
+    private static Path findProjectRoot() {
+        Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+        while (current != null) {
+            if (Files.exists(current.resolve(".git"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("Cannot locate the Git project root");
+    }
 
     @Test
     void rootPomDeclaresTransitionalMicroserviceModules() throws Exception {

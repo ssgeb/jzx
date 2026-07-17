@@ -119,7 +119,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class MicroserviceModuleTopologyContractTest {
 
-    private final Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+    private final Path root = findProjectRoot();
+
+    private static Path findProjectRoot() {
+        Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath();
+        while (current != null) {
+            if (Files.exists(current.resolve(".git"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("Cannot locate the Git project root");
+    }
 
     @Test
     void rootPomDeclaresTransitionalMicroserviceModules() throws Exception {
@@ -163,7 +174,7 @@ git commit -m "test: define microservice module topology"
 - Create: `legacy-service/pom.xml`
 - Move: `src/` → `legacy-service/src/`
 
-- [ ] **Step 1: Move the current application into the transitional module**
+- [x] **Step 1: Move the current application into the transitional module**
 
 Use `git mv` so history remains visible:
 
@@ -172,7 +183,7 @@ New-Item -ItemType Directory -Path legacy-service
 git mv src legacy-service/src
 ```
 
-- [ ] **Step 2: Replace the root POM with the parent reactor**
+- [x] **Step 2: Replace the root POM with the parent reactor**
 
 The root POM must contain this version and module core:
 
@@ -234,7 +245,7 @@ Import these BOMs in `dependencyManagement` in this order:
 </dependency>
 ```
 
-- [ ] **Step 3: Create the legacy-service POM**
+- [x] **Step 3: Create the legacy-service POM**
 
 Make `legacy-service/pom.xml` inherit `doorhandlecatch-parent`. Move the existing application dependencies into this POM, remove their explicit Spring-managed versions, and add the MyBatis parser module required by MyBatis-Plus 3.5.9 and later:
 
@@ -285,7 +296,7 @@ detection-service/pom.xml  -> detection-service
 assistant-service/pom.xml  -> assistant-service
 ```
 
-- [ ] **Step 4: Run the topology test in its new module**
+- [x] **Step 4: Run the topology test in its new module**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl legacy-service -Dtest=MicroserviceModuleTopologyContractTest test
@@ -293,7 +304,7 @@ assistant-service/pom.xml  -> assistant-service
 
 Expected: PASS.
 
-- [ ] **Step 5: Run all legacy tests on the upgraded dependency baseline**
+- [x] **Step 5: Run all legacy tests on the upgraded dependency baseline**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl legacy-service test
@@ -301,7 +312,7 @@ Expected: PASS.
 
 Expected: PASS. Fix only verified Spring Boot 3.5/MyBatis compatibility errors; do not change business behavior in this task.
 
-- [ ] **Step 6: Commit the reactor conversion**
+- [x] **Step 6: Commit the reactor conversion**
 
 ```powershell
 git add pom.xml legacy-service

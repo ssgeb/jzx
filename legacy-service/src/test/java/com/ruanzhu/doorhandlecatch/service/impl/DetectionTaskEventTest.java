@@ -211,7 +211,7 @@ class DetectionTaskEventTest {
                 .status("COMPLETED")
                 .build());
 
-        verify(fixture.detectionTaskMapper, Mockito.never()).updateById(any());
+        verify(fixture.detectionTaskMapper, Mockito.never()).updateById(any(DetectionTask.class));
     }
 
     @Test
@@ -229,7 +229,7 @@ class DetectionTaskEventTest {
                 .status("COMPLETED")
                 .build());
 
-        verify(fixture.detectionTaskMapper, Mockito.never()).updateById(any());
+        verify(fixture.detectionTaskMapper, Mockito.never()).updateById(any(DetectionTask.class));
     }
 
     @Test

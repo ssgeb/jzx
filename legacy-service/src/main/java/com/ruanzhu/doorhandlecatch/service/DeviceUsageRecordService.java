@@ -1,7 +1,7 @@
 package com.ruanzhu.doorhandlecatch.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 import com.ruanzhu.doorhandlecatch.entity.DeviceUsageRecord;
 
 import java.time.LocalDateTime;
@@ -131,4 +131,4 @@ public interface DeviceUsageRecordService extends IService<DeviceUsageRecord> {
      * @param id 记录ID
      */
     void deleteDeviceUsageRecord(Long id);
-} 
+}
