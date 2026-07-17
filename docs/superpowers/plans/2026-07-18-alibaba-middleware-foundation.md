@@ -52,7 +52,7 @@
 
 - Create: `docs/distributed-baseline.md`
 
-- [ ] **Step 1: Run the existing backend tests**
+- [x] **Step 1: Run the existing backend tests**
 
 Run:
 
@@ -62,19 +62,19 @@ Run:
 
 Expected: Maven exits with code `0`. If an existing test fails, record its exact class and failure in the baseline document before changing dependencies.
 
-- [ ] **Step 2: Run the existing frontend tests**
+- [x] **Step 2: Run the existing frontend tests**
 
 Run:
 
 ```powershell
 Set-Location frontend
-npm test
+node --test tests/*.test.cjs
 Set-Location ..
 ```
 
 Expected: the existing frontend contract suite exits with code `0`.
 
-- [ ] **Step 3: Write the baseline record**
+- [x] **Step 3: Write the baseline record**
 
 Create `docs/distributed-baseline.md` with this structure and the actual command results:
 
@@ -90,7 +90,7 @@ Create `docs/distributed-baseline.md` with this structure and the actual command
 - 基线提交：执行时的 `git rev-parse HEAD`
 ```
 
-- [ ] **Step 4: Commit the baseline**
+- [x] **Step 4: Commit the baseline**
 
 ```powershell
 git add docs/distributed-baseline.md
@@ -811,7 +811,7 @@ Expected: executable JARs exist for legacy-service and the four new business ser
 
 ```powershell
 Set-Location frontend
-npm test
+node --test tests/*.test.cjs
 Set-Location ..
 ```
 
