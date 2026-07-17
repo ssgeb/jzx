@@ -105,7 +105,7 @@ git commit -m "docs: record distributed migration baseline"
 
 - Create: `src/test/java/com/ruanzhu/doorhandlecatch/config/MicroserviceModuleTopologyContractTest.java`
 
-- [ ] **Step 1: Write the failing contract test**
+- [x] **Step 1: Write the failing contract test**
 
 ```java
 package com.ruanzhu.doorhandlecatch.config;
@@ -119,7 +119,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class MicroserviceModuleTopologyContractTest {
 
-    private final Path root = Path.of(System.getProperty("maven.multiModuleProjectDirectory"));
+    private final Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath();
 
     @Test
     void rootPomDeclaresTransitionalMicroserviceModules() throws Exception {
@@ -138,7 +138,7 @@ class MicroserviceModuleTopologyContractTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify the intended failure**
+- [x] **Step 2: Run the test and verify the intended failure**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -Dtest=MicroserviceModuleTopologyContractTest test
@@ -146,7 +146,7 @@ class MicroserviceModuleTopologyContractTest {
 
 Expected: FAIL because the root project still has `<packaging>jar</packaging>` and no module list.
 
-- [ ] **Step 3: Commit the red test**
+- [x] **Step 3: Commit the red test**
 
 ```powershell
 git add src/test/java/com/ruanzhu/doorhandlecatch/config/MicroserviceModuleTopologyContractTest.java
