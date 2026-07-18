@@ -806,7 +806,7 @@ git commit -m "docs: add distributed development workflow"
 
 **Files:** None unless verification reveals a defect covered by this plan.
 
-- [ ] **Step 1: Run the full Maven reactor**
+- [x] **Step 1: Run the full Maven reactor**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' clean test
@@ -814,7 +814,7 @@ git commit -m "docs: add distributed development workflow"
 
 Expected: all reactor modules finish with `SUCCESS`.
 
-- [ ] **Step 2: Package all JAR applications**
+- [x] **Step 2: Package all JAR applications**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' clean package -DskipTests
@@ -822,7 +822,7 @@ Expected: all reactor modules finish with `SUCCESS`.
 
 Expected: executable JARs exist for legacy-service and the four new business services; shared modules produce normal library JARs.
 
-- [ ] **Step 3: Re-run frontend contracts**
+- [x] **Step 3: Re-run frontend contracts**
 
 ```powershell
 Set-Location frontend
@@ -832,7 +832,7 @@ Set-Location ..
 
 Expected: PASS; the foundation phase must not change frontend behavior.
 
-- [ ] **Step 4: Validate repository cleanliness**
+- [x] **Step 4: Validate repository cleanliness**
 
 ```powershell
 git status --short
@@ -841,10 +841,18 @@ git diff --check
 
 Expected: no uncommitted generated files, no committed `.env`, logs, database volumes, target files or credentials.
 
-- [ ] **Step 5: Record the phase completion commit**
+- [x] **Step 5: Record the phase completion commit**
 
 ```powershell
 git log --oneline -8
 ```
 
 Expected: the baseline, reactor, shared-contract, service-skeleton, infrastructure and workflow commits are visible in order.
+
+Verification recorded on 2026-07-18:
+
+- Full Maven reactor: 223 tests, 0 failures, 0 errors, 0 skipped.
+- Packaging: five executable Spring Boot JARs contain `BOOT-INF`; three shared modules produce normal library JARs.
+- Frontend contracts: 42 passed, 0 failed after updating resource paths for the Maven reactor layout.
+- Runtime: all six infrastructure containers are healthy; the four service health endpoints, Nacos registrations and Sentinel heartbeats were verified.
+- Repository: `git status --short` and `git diff --check` were clean before recording this verification note.
