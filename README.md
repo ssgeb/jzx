@@ -157,6 +157,21 @@ docker compose -f compose.nginx.yml up -d --build
 docs/nginx-compose-deployment.md
 ```
 
+### 微服务分布式开发环境
+
+`feature/microservices-distributed` 分支提供第一阶段的微服务底座：四个可执行 Spring Boot JAR，以及 Nacos、Sentinel、Seata、Kafka、MySQL、Redis 六个基础组件。项目按已确认方案不引入 Gateway 和 OpenFeign，跨服务异步流程使用 Kafka。
+
+```powershell
+Copy-Item deploy/distributed/.env.example deploy/distributed/.env
+docker compose --env-file deploy/distributed/.env -f deploy/distributed/compose.yml up -d --build
+```
+
+完整的端口、环境变量、四服务启动方式、冒烟检查和停止命令见：
+
+```text
+docs/distributed-development.md
+```
+
 ### 图像检测
 
 1. 访问系统：http://localhost:3001

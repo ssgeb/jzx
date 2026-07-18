@@ -17,8 +17,10 @@ spring:
       config:
         namespace: ${NACOS_NAMESPACE:public}
     sentinel:
+      eager: ${SENTINEL_EAGER:true}
       transport:
         dashboard: ${SENTINEL_DASHBOARD:127.0.0.1:8858}
+        port: ${SENTINEL_TRANSPORT_PORT:8721}
 
 management:
   endpoints:

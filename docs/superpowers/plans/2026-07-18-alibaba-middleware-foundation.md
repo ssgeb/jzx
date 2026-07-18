@@ -738,8 +738,12 @@ git commit -m "infra: add Alibaba middleware development stack"
 - Create: `scripts/distributed/smoke.ps1`
 - Create: `docs/distributed-development.md`
 - Modify: `README.md`
+- Modify: `auth-service/src/main/resources/application.yml`
+- Modify: `resource-service/src/main/resources/application.yml`
+- Modify: `detection-service/src/main/resources/application.yml`
+- Modify: `assistant-service/src/main/resources/application.yml`
 
-- [ ] **Step 1: Write smoke checks before launching applications**
+- [x] **Step 1: Write smoke checks before launching applications**
 
 The script must fail unless all of these endpoints respond:
 
@@ -762,7 +766,7 @@ detection-service
 assistant-service
 ```
 
-- [ ] **Step 2: Start the four applications**
+- [x] **Step 2: Start the four applications**
 
 Run each command in a separate PowerShell terminal:
 
@@ -773,7 +777,7 @@ Run each command in a separate PowerShell terminal:
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl assistant-service spring-boot:run
 ```
 
-- [ ] **Step 3: Run smoke verification**
+- [x] **Step 3: Run smoke verification**
 
 ```powershell
 & scripts/distributed/smoke.ps1
@@ -781,7 +785,7 @@ Run each command in a separate PowerShell terminal:
 
 Expected: all infrastructure, health endpoints and Nacos registrations report success.
 
-- [ ] **Step 4: Document development startup and shutdown**
+- [x] **Step 4: Document development startup and shutdown**
 
 `docs/distributed-development.md` must cover prerequisites, environment variables, Docker startup, four service commands, Nacos/Sentinel console addresses, the Seata 8091 transaction port, smoke checks and this shutdown command:
 
@@ -789,7 +793,7 @@ Expected: all infrastructure, health endpoints and Nacos registrations report su
 docker compose --env-file deploy/distributed/.env -f deploy/distributed/compose.yml down
 ```
 
-- [ ] **Step 5: Commit smoke tooling and documentation**
+- [x] **Step 5: Commit smoke tooling and documentation**
 
 ```powershell
 git add scripts/distributed docs/distributed-development.md README.md
