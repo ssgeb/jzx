@@ -483,7 +483,7 @@ git commit -m "feat: add shared platform and event contracts"
 - Create: `assistant-service/**`
 - Test: one `ApplicationMetadataTest` in each service
 
-- [ ] **Step 1: Write a failing metadata test in each service**
+- [x] **Step 1: Write a failing metadata test in each service**
 
 Use the auth service as the template, changing class and expected name for each module:
 
@@ -499,7 +499,7 @@ class AuthServiceApplicationMetadataTest {
 }
 ```
 
-- [ ] **Step 2: Verify the four tests fail because skeleton files do not exist**
+- [x] **Step 2: Verify the four tests fail because skeleton files do not exist**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl auth-service,resource-service,detection-service,assistant-service test
@@ -507,7 +507,7 @@ class AuthServiceApplicationMetadataTest {
 
 Expected: FAIL for missing service application/configuration files.
 
-- [ ] **Step 3: Add service dependencies**
+- [x] **Step 3: Add service dependencies**
 
 Each service POM includes:
 
@@ -536,7 +536,7 @@ Each service POM includes:
 
 Do not add Gateway or OpenFeign dependencies.
 
-- [ ] **Step 4: Add each service application class**
+- [x] **Step 4: Add each service application class**
 
 Example:
 
@@ -550,7 +550,7 @@ public class AuthServiceApplication {
 }
 ```
 
-- [ ] **Step 5: Add local application.yml files**
+- [x] **Step 5: Add local application.yml files**
 
 Example for auth-service:
 
@@ -590,7 +590,7 @@ management:
 
 Use ports 8102, 8103 and 8104 for the other services.
 
-- [ ] **Step 6: Run skeleton tests and package all four JARs**
+- [x] **Step 6: Run skeleton tests and package all four JARs**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl auth-service,resource-service,detection-service,assistant-service test package
@@ -598,7 +598,7 @@ Use ports 8102, 8103 and 8104 for the other services.
 
 Expected: PASS and one executable JAR under each module's `target` directory.
 
-- [ ] **Step 7: Commit the skeletons**
+- [x] **Step 7: Commit the skeletons**
 
 ```powershell
 git add auth-service resource-service detection-service assistant-service

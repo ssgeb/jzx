@@ -1,0 +1,18 @@
+package com.ruanzhu.doorhandlecatch.assistant;
+
+import org.junit.jupiter.api.Test;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AssistantServiceApplicationMetadataTest {
+
+    @Test
+    void applicationHasExpectedServiceName() throws Exception {
+        String yaml = Files.readString(Path.of("src/main/resources/application.yml"));
+        assertThat(yaml).contains("name: assistant-service");
+        assertThat(yaml).contains("optional:nacos:${spring.application.name}.yaml");
+    }
+}
