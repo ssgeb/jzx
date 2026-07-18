@@ -1,4 +1,6 @@
 /mvnw text eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
 *.cmd text eol=crlf
 *.java text working-tree-encoding=UTF-8
 *.js text working-tree-encoding=UTF-8

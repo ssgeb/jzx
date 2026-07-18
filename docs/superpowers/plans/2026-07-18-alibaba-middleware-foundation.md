@@ -616,15 +616,16 @@ git commit -m "feat: add Nacos and Sentinel service skeletons"
 - Create: `deploy/distributed/mysql-init/00-create-databases.sh`
 - Create: `deploy/distributed/mysql-init/01-seata-server.sql`
 - Create: `deploy/distributed/sentinel/Dockerfile`
+- Create: `deploy/distributed/seata/Dockerfile`
 - Create: `deploy/distributed/seata/application.yml`
 - Create: `legacy-service/src/test/java/com/ruanzhu/doorhandlecatch/config/DistributedComposeContractTest.java`
 
-- [ ] **Step 1: Write the failing Compose contract test**
+- [x] **Step 1: Write the failing Compose contract test**
 
 ```java
 @Test
 void composePinsAlibabaMiddlewareAndRequiredInfrastructure() throws Exception {
-    Path root = Path.of(System.getProperty("maven.multiModuleProjectDirectory"));
+    Path root = findProjectRoot();
     String compose = Files.readString(root.resolve("deploy/distributed/compose.yml"));
 
     assertThat(compose).contains("nacos/nacos-server:v3.0.3");
@@ -637,7 +638,7 @@ void composePinsAlibabaMiddlewareAndRequiredInfrastructure() throws Exception {
 }
 ```
 
-- [ ] **Step 2: Verify the contract fails**
+- [x] **Step 2: Verify the contract fails**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl legacy-service -Dtest=DistributedComposeContractTest test
@@ -645,14 +646,14 @@ void composePinsAlibabaMiddlewareAndRequiredInfrastructure() throws Exception {
 
 Expected: FAIL because `deploy/distributed/compose.yml` is absent.
 
-- [ ] **Step 3: Create pinned infrastructure definitions**
+- [x] **Step 3: Create pinned infrastructure definitions**
 
 Use these fixed images:
 
 ```yaml
 mysql: mysql:8.4
 nacos: nacos/nacos-server:v3.0.3
-seata-server: apache/seata-server:2.5.0.jdk21
+seata-server: doorhandle/seata-server:2.5.0-jdk21-mysql9.1.0
 kafka: apache/kafka:3.8.1
 redis: redis:7.4-alpine
 ```
@@ -665,15 +666,14 @@ Nacos client      8848
 Nacos gRPC        9848
 Nacos console     8088 -> container 8080
 Sentinel dashboard 8858
-Seata console     7091
 Seata transaction 8091
 Kafka             9092
 Redis             6379
 ```
 
-Every service must have a health check. Nacos runs in authenticated standalone mode with token and identity values loaded from `deploy/distributed/.env`. Seata uses `store.mode=db`, registers with Nacos, and writes coordinator state into `seata_server`.
+Every service must have a health check. Nacos runs in authenticated standalone mode with token and identity values loaded from `deploy/distributed/.env`. The Seata image extends `apache/seata-server:2.5.0.jdk21` with the checksum-pinned MySQL Connector/J 9.1.0 required by Seata 2.5, uses `store.mode=db`, registers with Nacos, and writes coordinator state into `seata_server`.
 
-- [ ] **Step 4: Create database initialization**
+- [x] **Step 4: Create database initialization**
 
 The initialization script creates:
 
@@ -691,7 +691,7 @@ Import the Seata 2.5.0 MySQL coordinator schema from this pinned official source
 https://raw.githubusercontent.com/apache/incubator-seata/v2.5.0/script/server/db/mysql.sql
 ```
 
-- [ ] **Step 5: Build Sentinel Dashboard from the official release artifact**
+- [x] **Step 5: Build Sentinel Dashboard from the official release artifact**
 
 `deploy/distributed/sentinel/Dockerfile`:
 
@@ -703,7 +703,7 @@ EXPOSE 8858
 ENTRYPOINT ["java", "-Dserver.port=8858", "-Dcsp.sentinel.dashboard.server=localhost:8858", "-Dproject.name=sentinel-dashboard", "-jar", "/opt/sentinel-dashboard.jar"]
 ```
 
-- [ ] **Step 6: Validate and start infrastructure**
+- [x] **Step 6: Validate and start infrastructure**
 
 ```powershell
 Copy-Item deploy/distributed/.env.example deploy/distributed/.env
@@ -714,7 +714,7 @@ docker compose --env-file deploy/distributed/.env -f deploy/distributed/compose.
 
 Expected: `config` succeeds and all six containers become healthy.
 
-- [ ] **Step 7: Re-run the contract test**
+- [x] **Step 7: Re-run the contract test**
 
 ```powershell
 & 'D:\ruanjian\apache-maven-3.9.6\bin\mvn.cmd' -pl legacy-service -Dtest=DistributedComposeContractTest test
@@ -722,7 +722,7 @@ Expected: `config` succeeds and all six containers become healthy.
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit infrastructure**
+- [x] **Step 8: Commit infrastructure**
 
 ```powershell
 git add deploy/distributed legacy-service/src/test/java/com/ruanzhu/doorhandlecatch/config/DistributedComposeContractTest.java .gitignore
@@ -746,7 +746,7 @@ The script must fail unless all of these endpoints respond:
 ```text
 http://localhost:8088/                         Nacos console
 http://localhost:8858/                         Sentinel Dashboard
-http://localhost:7091/                         Seata console
+localhost:8091                                 Seata transaction coordinator
 http://localhost:8101/actuator/health          auth-service
 http://localhost:8102/actuator/health          resource-service
 http://localhost:8103/actuator/health          detection-service
@@ -783,7 +783,7 @@ Expected: all infrastructure, health endpoints and Nacos registrations report su
 
 - [ ] **Step 4: Document development startup and shutdown**
 
-`docs/distributed-development.md` must cover prerequisites, environment variables, Docker startup, four service commands, Nacos/Sentinel/Seata console addresses, smoke checks and this shutdown command:
+`docs/distributed-development.md` must cover prerequisites, environment variables, Docker startup, four service commands, Nacos/Sentinel console addresses, the Seata 8091 transaction port, smoke checks and this shutdown command:
 
 ```powershell
 docker compose --env-file deploy/distributed/.env -f deploy/distributed/compose.yml down

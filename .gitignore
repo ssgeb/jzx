@@ -80,3 +80,10 @@ __pycache__/
 
 ### Local Git worktrees ###
 .worktrees/
+
+### Distributed development secrets ###
+/deploy/distributed/.env
+/deploy/distributed/seata/Dockerfile.local
+/deploy/distributed/seata/*.jar
+/deploy/distributed/sentinel/Dockerfile.local
+/deploy/distributed/sentinel/*.jar
