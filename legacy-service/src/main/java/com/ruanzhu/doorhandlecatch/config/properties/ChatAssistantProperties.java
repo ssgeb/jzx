@@ -13,6 +13,13 @@ import java.util.List;
 public class ChatAssistantProperties {
 
     private Boolean enabled = true;
+    private String engine = "java";
+    private Boolean fallbackToJava = true;
+    private String pythonBaseUrl = "http://127.0.0.1:8090";
+    private Integer pythonConnectTimeoutMs = 2000;
+    private Integer pythonReadTimeoutMs = 300000;
+    private String internalHmacSecret = "";
+    private Integer internalSignatureMaxSkewSeconds = 60;
     private String defaultSessionSuffix = "default";
     private Integer maxHistoryMessages = 30;
     private Integer maxRequestsPerMinute = 30;

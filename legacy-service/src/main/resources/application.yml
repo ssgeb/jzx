@@ -189,6 +189,13 @@ aliyun:
 
 chat-assistant:
   enabled: ${CHAT_ASSISTANT_ENABLED:true}
+  engine: ${CHAT_ASSISTANT_ENGINE:java}
+  fallback-to-java: ${CHAT_ASSISTANT_FALLBACK_TO_JAVA:true}
+  python-base-url: ${PYTHON_ASSISTANT_URL:http://127.0.0.1:8090}
+  python-connect-timeout-ms: ${PYTHON_ASSISTANT_CONNECT_TIMEOUT_MS:2000}
+  python-read-timeout-ms: ${PYTHON_ASSISTANT_READ_TIMEOUT_MS:300000}
+  internal-hmac-secret: ${ASSISTANT_HMAC_SECRET:}
+  internal-signature-max-skew-seconds: ${ASSISTANT_SIGNATURE_MAX_SKEW_SECONDS:60}
   default-session-suffix: ${CHAT_ASSISTANT_DEFAULT_SESSION_SUFFIX:default}
   max-history-messages: ${CHAT_ASSISTANT_MAX_HISTORY_MESSAGES:30}
   max-requests-per-minute: ${CHAT_ASSISTANT_MAX_REQUESTS_PER_MINUTE:30}

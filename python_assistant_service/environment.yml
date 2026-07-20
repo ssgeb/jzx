@@ -1,0 +1,15 @@
+name: doorhandlecatch-assistant
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - fastapi==0.135.2
+      - httpx==0.28.1
+      - langgraph==1.2.9
+      - pydantic>=2.12,<3
+      - pytest>=8.0
+      - redis==8.0.1
+      - uvicorn==0.41.0

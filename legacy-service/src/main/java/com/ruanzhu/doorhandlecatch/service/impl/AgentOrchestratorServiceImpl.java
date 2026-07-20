@@ -9,12 +9,17 @@ import com.ruanzhu.doorhandlecatch.dto.chat.ChatMessageResponse;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatPendingActionPayload;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatSendMessageRequest;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatStreamEvent;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentAction;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentInvokeRequest;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentResponse;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentResumeRequest;
 import com.ruanzhu.doorhandlecatch.entity.ChatPendingAction;
 import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
 import com.ruanzhu.doorhandlecatch.service.AgentOrchestratorService;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.Mem0Client;
+import com.ruanzhu.doorhandlecatch.service.PythonAssistantClient;
 import com.ruanzhu.doorhandlecatch.service.RagKnowledgeService;
 import com.ruanzhu.doorhandlecatch.stategraph.checkpoint.MySqlCheckpointer;
 import com.ruanzhu.doorhandlecatch.stategraph.core.AgentState;
@@ -34,6 +39,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -56,6 +62,7 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
     private final RagKnowledgeService ragKnowledgeService;
     private final TaskExecutor taskExecutor;
     private final ChatAssistantProperties chatAssistantProperties;
+    private final PythonAssistantClient pythonAssistantClient;
     private final Map<Long, RateWindow> requestWindows = new ConcurrentHashMap<>();
 
     @Value("${conversation.max-recent-messages:10}")
@@ -163,8 +170,23 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         progressConsumer.accept(ChatStreamEvent.status(sessionId, "会话已准备"));
 
         // 2. 保存用户消息到数据库
-        chatSessionService.appendUserMessage(tenant, sessionId, request.getContent());
+        ChatMessageResponse userMessage = chatSessionService.appendUserMessage(
+                tenant, sessionId, request.getContent());
         progressConsumer.accept(ChatStreamEvent.status(sessionId, "用户消息已保存"));
+
+        // Python 模式复用原有 Java 会话、消息和 Checkpoint 边界。
+        // Python 调用失败时只允许在初次消息的只读/待确认阶段回退 Java；确认执行不走这里。
+        if (isPythonEngine()) {
+            try {
+                return handlePythonUserMessage(tenant, request, userMessage, progressConsumer);
+            } catch (RuntimeException ex) {
+                if (!Boolean.TRUE.equals(chatAssistantProperties.getFallbackToJava())) {
+                    throw ex;
+                }
+                log.warn("Python 智能体调用失败，回退 Java StateGraph: {}", ex.getMessage());
+                progressConsumer.accept(ChatStreamEvent.status(sessionId, "Python 智能体暂不可用，已切换备用引擎"));
+            }
+        }
 
         // 3. 从 checkpoint 恢复多轮上下文，构建新 State
         AgentState state = buildStateWithContext(tenant, sessionId, request);
@@ -287,6 +309,9 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         }
 
         try {
+            if (isPythonEngine()) {
+                return handlePythonConfirmation(tenant, request);
+            }
             AgentState result = chatGraph.resume(tenant, request.getSessionId(), Map.of(
                     AgentState.KEY_CONFIRMED, true
             ));
@@ -313,6 +338,105 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
                     abbreviateError(ex.getMessage()));
             throw ex;
         }
+    }
+
+    private ChatMessageResponse handlePythonUserMessage(
+            TenantContext tenant,
+            ChatSendMessageRequest request,
+            ChatMessageResponse userMessage,
+            Consumer<ChatStreamEvent> progressConsumer) {
+        String requestId = UUID.randomUUID().toString();
+        String idempotencyKey = userMessage != null && userMessage.getId() != null
+                ? "chat-message:" + userMessage.getId()
+                : "chat-request:" + requestId;
+        PythonAgentInvokeRequest pythonRequest = PythonAgentInvokeRequest.builder()
+                .requestId(requestId)
+                .idempotencyKey(idempotencyKey)
+                .tenantUserId(tenant.userId())
+                .username(tenant.username())
+                .sessionId(request.getSessionId())
+                .content(request.getContent())
+                .currentRoute(request.getCurrentRoute())
+                .currentPageTitle(request.getCurrentPageTitle())
+                .checkpoint(loadCheckpointMap(tenant, request.getSessionId()))
+                .build();
+        progressConsumer.accept(ChatStreamEvent.status(request.getSessionId(), "正在调用 Python 智能体"));
+        PythonAgentResponse response = pythonAssistantClient.invoke(pythonRequest);
+        progressConsumer.accept(ChatStreamEvent.status(request.getSessionId(), "Python 智能体回答生成完成"));
+        return persistPythonResponse(tenant, request.getSessionId(), request.getContent(), response);
+    }
+
+    private ChatMessageResponse handlePythonConfirmation(
+            TenantContext tenant,
+            ChatConfirmActionRequest request) {
+        PythonAgentResumeRequest pythonRequest = PythonAgentResumeRequest.builder()
+                .requestId(UUID.randomUUID().toString())
+                .idempotencyKey("chat-action:" + request.getActionId())
+                .tenantUserId(tenant.userId())
+                .username(tenant.username())
+                .sessionId(request.getSessionId())
+                .actionId(request.getActionId())
+                .confirmed(true)
+                .checkpoint(loadCheckpointMap(tenant, request.getSessionId()))
+                .build();
+        PythonAgentResponse response = pythonAssistantClient.resume(pythonRequest);
+        return persistPythonResponse(tenant, request.getSessionId(), null, response);
+    }
+
+    private ChatMessageResponse persistPythonResponse(
+            TenantContext tenant,
+            String sessionId,
+            String userPrompt,
+            PythonAgentResponse response) {
+        if (response == null || !StringUtils.hasText(response.getContent())) {
+            throw new BusinessException("Python 智能体返回空结果");
+        }
+        AgentState state = AgentState.fromMap(response.getCheckpoint());
+        state.set(AgentState.KEY_THREAD_ID, sessionId)
+                .set(AgentState.KEY_TENANT_USER_ID, tenant.userId())
+                .set(AgentState.KEY_USERNAME, tenant.username())
+                .set(AgentState.KEY_RESULT_CONTENT, response.getContent())
+                .set(AgentState.KEY_RESULT_TYPE, response.getResultType())
+                .set(AgentState.KEY_INTENT, response.getIntent())
+                .set(AgentState.KEY_EXIT_REASON, response.getExitReason());
+
+        String actionId = null;
+        if (AgentState.EXIT_PENDING_CONFIRMATION.equals(response.getExitReason())) {
+            PythonAgentAction action = response.getAction();
+            if (action == null || !StringUtils.hasText(action.getActionId())) {
+                throw new BusinessException("Python 智能体待确认结果缺少 actionId");
+            }
+            actionId = action.getActionId();
+            state.set(AgentState.KEY_PENDING_ACTION_ID, actionId);
+            ChatPendingActionPayload payload = new ChatPendingActionPayload();
+            payload.setUsername(tenant.username());
+            payload.setUserPrompt(StringUtils.hasText(action.getTaskPrompt())
+                    ? action.getTaskPrompt()
+                    : userPrompt);
+            payload.setIntent(action.getIntent());
+            payload.setTargetAgent(action.getTargetAgent());
+            chatSessionService.savePendingAction(
+                    tenant, sessionId, actionId, action.getIntent(), payload);
+        }
+
+        checkpointer.save(tenant, sessionId, state);
+        String content = stripEmoji(response.getContent());
+        return chatSessionService.appendAssistantMessage(
+                tenant,
+                sessionId,
+                content,
+                response.getResultType(),
+                response.getIntent(),
+                actionId);
+    }
+
+    private Map<String, Object> loadCheckpointMap(TenantContext tenant, String sessionId) {
+        AgentState previous = checkpointer.load(tenant, sessionId);
+        return previous == null ? Map.of() : previous.toMap();
+    }
+
+    private boolean isPythonEngine() {
+        return "python".equalsIgnoreCase(chatAssistantProperties.getEngine());
     }
 
     // ---- 上下文恢复 ----

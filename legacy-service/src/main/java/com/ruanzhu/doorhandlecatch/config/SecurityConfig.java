@@ -63,6 +63,8 @@ public class SecurityConfig implements WebMvcConfigurer {
                         .requestMatchers("/api/detection/upload", "/api/detection/upload-and-detect").authenticated()
                         .requestMatchers("/api/detection/tasks/**").authenticated()
                         .requestMatchers("/api/chat-assistant/**").authenticated()
+                        // 该接口不使用浏览器 JWT，由 Controller 校验 Python 服务的 HMAC 签名。
+                        .requestMatchers("/internal/v1/agent-tools/**").permitAll()
                         .requestMatchers("/api/oss/preview").authenticated()
                         .requestMatchers("/static/**").permitAll()
                         .requestMatchers("/*.html", "/*.js", "/*.css", "/*.ico", "/assets/**").permitAll()

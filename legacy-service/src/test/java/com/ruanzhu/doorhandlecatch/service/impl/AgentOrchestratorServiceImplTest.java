@@ -9,6 +9,7 @@ import com.ruanzhu.doorhandlecatch.dto.chat.ChatConfirmActionRequest;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatMessageResponse;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatPendingActionPayload;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatSendMessageRequest;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentResponse;
 import com.ruanzhu.doorhandlecatch.entity.ChatPendingAction;
 import com.ruanzhu.doorhandlecatch.security.TenantContext;
 import com.ruanzhu.doorhandlecatch.security.TenantPrincipal;
@@ -16,6 +17,7 @@ import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.ContextBuilder;
 import com.ruanzhu.doorhandlecatch.service.DeepSeekClient;
 import com.ruanzhu.doorhandlecatch.service.Mem0Client;
+import com.ruanzhu.doorhandlecatch.service.PythonAssistantClient;
 import com.ruanzhu.doorhandlecatch.service.RagKnowledgeService;
 import com.ruanzhu.doorhandlecatch.stategraph.checkpoint.MySqlCheckpointer;
 import com.ruanzhu.doorhandlecatch.stategraph.core.AgentState;
@@ -31,6 +33,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,6 +48,8 @@ class AgentOrchestratorServiceImplTest {
     private Mem0Client mem0Client;
     private ObjectMapper objectMapper;
     private RouterNode routerNode;
+    private MySqlCheckpointer checkpointer;
+    private PythonAssistantClient pythonAssistantClient;
 
     @BeforeEach
     void setUp() {
@@ -57,17 +62,20 @@ class AgentOrchestratorServiceImplTest {
         ragKnowledgeService = Mockito.mock(RagKnowledgeService.class);
         mem0Client = Mockito.mock(Mem0Client.class);
         objectMapper = new ObjectMapper();
+        checkpointer = Mockito.mock(MySqlCheckpointer.class);
+        pythonAssistantClient = Mockito.mock(PythonAssistantClient.class);
 
         orchestratorService = new AgentOrchestratorServiceImpl(
                 chatSessionService,
                 chatGraph,
                 routerNode,
-                Mockito.mock(MySqlCheckpointer.class),
+                checkpointer,
                 objectMapper,
                 mem0Client,
                 ragKnowledgeService,
                 Runnable::run,
-                new ChatAssistantProperties()
+                new ChatAssistantProperties(),
+                pythonAssistantClient
         );
         SecurityContextHolder.getContext().setAuthentication(
                 authentication(1L, "admin"));
@@ -86,12 +94,13 @@ class AgentOrchestratorServiceImplTest {
                 chatSessionService,
                 chatGraph,
                 routerNode,
-                Mockito.mock(MySqlCheckpointer.class),
+                checkpointer,
                 objectMapper,
                 mem0Client,
                 ragKnowledgeService,
                 capturingExecutor,
-                new ChatAssistantProperties()
+                new ChatAssistantProperties(),
+                pythonAssistantClient
         );
         SecurityContextHolder.getContext().setAuthentication(
                 authentication(42L, "alice"));
@@ -126,6 +135,61 @@ class AgentOrchestratorServiceImplTest {
         submittedTask.get().run();
 
         assertThat(workerUsername).hasValue("alice");
+    }
+
+    @Test
+    void pythonEnginePersistsReturnedCheckpointWithoutInvokingJavaGraph() {
+        ChatAssistantProperties properties = new ChatAssistantProperties();
+        properties.setEngine("python");
+        properties.setFallbackToJava(false);
+        AgentOrchestratorServiceImpl pythonService = new AgentOrchestratorServiceImpl(
+                chatSessionService,
+                chatGraph,
+                routerNode,
+                checkpointer,
+                objectMapper,
+                mem0Client,
+                ragKnowledgeService,
+                Runnable::run,
+                properties,
+                pythonAssistantClient
+        );
+        ChatSendMessageRequest request = new ChatSendMessageRequest();
+        request.setSessionId("sess_admin_default");
+        request.setContent("查询检测任务");
+        ChatMessageResponse savedUser = new ChatMessageResponse();
+        savedUser.setId(101L);
+        Mockito.when(chatSessionService.appendUserMessage(
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getContent()))
+                .thenReturn(savedUser);
+        PythonAgentResponse pythonResponse = new PythonAgentResponse();
+        pythonResponse.setContent("Python 查询结果");
+        pythonResponse.setResultType("TEXT");
+        pythonResponse.setIntent("DETECTION_QUERY");
+        pythonResponse.setExitReason("COMPLETE");
+        pythonResponse.setCheckpoint(Map.of(
+                "thread_id", request.getSessionId(),
+                "intent", "DETECTION_QUERY",
+                "exit_reason", "COMPLETE"));
+        Mockito.when(pythonAssistantClient.invoke(Mockito.any())).thenReturn(pythonResponse);
+        ChatMessageResponse assistant = new ChatMessageResponse();
+        assistant.setContent("Python 查询结果");
+        Mockito.when(chatSessionService.appendAssistantMessage(
+                new TenantContext(1L, "admin"), request.getSessionId(),
+                "Python 查询结果", "TEXT", "DETECTION_QUERY", null))
+                .thenReturn(assistant);
+
+        ChatMessageResponse result = pythonService.handleUserMessage("admin", request);
+
+        assertThat(result.getContent()).isEqualTo("Python 查询结果");
+        Mockito.verify(pythonAssistantClient).invoke(Mockito.argThat(value ->
+                value.getTenantUserId().equals(1L)
+                        && value.getIdempotencyKey().equals("chat-message:101")));
+        Mockito.verify(checkpointer).save(
+                Mockito.eq(new TenantContext(1L, "admin")),
+                Mockito.eq(request.getSessionId()),
+                Mockito.argThat(state -> "DETECTION_QUERY".equals(state.getString(AgentState.KEY_INTENT))));
+        Mockito.verifyNoInteractions(chatGraph);
     }
 
     @Test

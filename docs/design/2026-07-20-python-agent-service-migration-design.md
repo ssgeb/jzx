@@ -106,7 +106,7 @@ Python 服务本身保持无核心业务状态：单次请求所需的 Checkpoin
 ### 5.3 目录建议
 
 ```text
-python-assistant-service/
+python_assistant_service/
 ├── app/
 │   ├── api/              # FastAPI 内部接口
 │   ├── graph/            # LangGraph 定义、状态和守卫
