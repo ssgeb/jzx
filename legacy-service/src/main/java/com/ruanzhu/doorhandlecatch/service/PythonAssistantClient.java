@@ -6,6 +6,9 @@ import com.ruanzhu.doorhandlecatch.config.properties.ChatAssistantProperties;
 import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentInvokeRequest;
 import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentResponse;
 import com.ruanzhu.doorhandlecatch.dto.internal.PythonAgentResumeRequest;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonSkillInstallRequest;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonSkillListResponse;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonSkillRecord;
 import com.ruanzhu.doorhandlecatch.security.InternalRequestSigner;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Map;
 
 @Component
 public class PythonAssistantClient {
@@ -38,14 +42,22 @@ public class PythonAssistantClient {
     }
 
     public PythonAgentResponse invoke(PythonAgentInvokeRequest request) {
-        return post("/internal/v1/agent/invoke", request);
+        return post("/internal/v1/agent/invoke", request, PythonAgentResponse.class);
     }
 
     public PythonAgentResponse resume(PythonAgentResumeRequest request) {
-        return post("/internal/v1/agent/resume", request);
+        return post("/internal/v1/agent/resume", request, PythonAgentResponse.class);
     }
 
-    private PythonAgentResponse post(String path, Object request) {
+    public PythonSkillListResponse listSkills() {
+        return post("/internal/v1/skills/list", Map.of(), PythonSkillListResponse.class);
+    }
+
+    public PythonSkillRecord installSkill(PythonSkillInstallRequest request) {
+        return post("/internal/v1/skills/install", request, PythonSkillRecord.class);
+    }
+
+    private <T> T post(String path, Object request, Class<T> responseType) {
         try {
             byte[] body = objectMapper.writeValueAsBytes(request);
             String timestamp = String.valueOf(Instant.now().getEpochSecond());
@@ -66,7 +78,7 @@ public class PythonAssistantClient {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new BusinessException("Python 智能体响应异常，状态码=" + response.statusCode());
             }
-            return objectMapper.readValue(response.body(), PythonAgentResponse.class);
+            return objectMapper.readValue(response.body(), responseType);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new BusinessException("调用 Python 智能体被中断");

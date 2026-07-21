@@ -33,6 +33,7 @@ services:
       ASSISTANT_HOST: 0.0.0.0
       ASSISTANT_PORT: 8090
       JAVA_AGENT_TOOL_BASE_URL: http://nginx:8081
+      ASSISTANT_SKILLS_ROOT: /app/runtime/assistant-skills
     expose:
       - "8090"
     extra_hosts:
@@ -40,6 +41,8 @@ services:
     depends_on:
       nginx:
         condition: service_healthy
+    volumes:
+      - assistant-skills:/app/runtime/assistant-skills
     networks:
       - doorhandle-network
     restart: unless-stopped
@@ -62,6 +65,7 @@ services:
 
 volumes:
   doorhandle-runtime:
+  assistant-skills:
 
 networks:
   doorhandle-network:

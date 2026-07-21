@@ -57,6 +57,13 @@ class Settings:
     memory_connect_timeout_seconds: float = 2.0
     memory_read_timeout_seconds: float = 5.0
     memory_top_k: int = 5
+    skills_enabled: bool = True
+    skills_root: str = "runtime/assistant-skills"
+    skill_allowed_repositories: tuple[str, ...] = ("openai/skills",)
+    skill_max_download_bytes: int = 10 * 1024 * 1024
+    skill_max_files: int = 200
+    skill_max_file_bytes: int = 2 * 1024 * 1024
+    skill_max_extracted_bytes: int = 20 * 1024 * 1024
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -95,4 +102,20 @@ class Settings:
             memory_connect_timeout_seconds=float(os.getenv("MEM0_CONNECT_TIMEOUT_MS", "2000")) / 1000,
             memory_read_timeout_seconds=float(os.getenv("MEM0_READ_TIMEOUT_MS", "5000")) / 1000,
             memory_top_k=int(os.getenv("ASSISTANT_MEMORY_TOP_K", "5")),
+            skills_enabled=_as_bool(os.getenv("ASSISTANT_SKILLS_ENABLED"), True),
+            skills_root=os.getenv("ASSISTANT_SKILLS_ROOT", "runtime/assistant-skills"),
+            skill_allowed_repositories=_as_csv(
+                os.getenv("ASSISTANT_SKILL_ALLOWED_REPOSITORIES"),
+                cls.skill_allowed_repositories,
+            ),
+            skill_max_download_bytes=int(
+                os.getenv("ASSISTANT_SKILL_MAX_DOWNLOAD_BYTES", str(10 * 1024 * 1024))
+            ),
+            skill_max_files=int(os.getenv("ASSISTANT_SKILL_MAX_FILES", "200")),
+            skill_max_file_bytes=int(
+                os.getenv("ASSISTANT_SKILL_MAX_FILE_BYTES", str(2 * 1024 * 1024))
+            ),
+            skill_max_extracted_bytes=int(
+                os.getenv("ASSISTANT_SKILL_MAX_EXTRACTED_BYTES", str(20 * 1024 * 1024))
+            ),
         )

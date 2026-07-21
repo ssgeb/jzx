@@ -14,6 +14,10 @@ export const fetchSessionCheckpoint = (sessionId) => request.get(`/api/chat-assi
 
 export const fetchAgentHealth = () => request.get('/api/chat-assistant/agent-health')
 
+export const fetchAgentSkills = () => request.get('/api/chat-assistant/skills')
+
+export const downloadAgentSkill = (payload) => request.post('/api/chat-assistant/skills/install', payload)
+
 export const archiveSession = (sessionId) => request.put(`/api/chat-assistant/sessions/${sessionId}/archive`)
 
 export const renameSession = (sessionId, title) => request.put(`/api/chat-assistant/sessions/${sessionId}/title`, { title })

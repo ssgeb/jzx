@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .clients import DeepSeekIntentModel, JavaToolClient
@@ -14,10 +14,19 @@ from .deep_agent import HarnessDeepAgent, deep_agent_configuration_status
 from .graph import AgentGraph
 from .knowledge import LocalKnowledgeBase
 from .memory import MemoryServiceClient
-from .schemas import AgentInvokeRequest, AgentResponse, AgentResumeRequest, HealthResponse
+from .schemas import (
+    AgentInvokeRequest,
+    AgentResponse,
+    AgentResumeRequest,
+    HealthResponse,
+    SkillInstallRequest,
+    SkillListResponse,
+    SkillRecord,
+)
 from .security import ReplayGuard, build_replay_guard, verify_internal_request
 from .service import AgentService
 from .settings import Settings
+from .skills import SkillCatalog, SkillError
 
 
 def _sse(event: str, data: dict) -> str:
@@ -29,12 +38,16 @@ def create_app(
     settings: Settings | None = None,
     service: AgentService | None = None,
     replay_guard: ReplayGuard | None = None,
+    skill_catalog: SkillCatalog | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     replay_guard = replay_guard or build_replay_guard(settings)
     owned_clients: list[object] = []
     knowledge = None
     deep_agent = None
+    if skill_catalog is None:
+        skill_catalog = SkillCatalog(settings)
+        owned_clients.append(skill_catalog)
     if service is None:
         tool_client = JavaToolClient(settings)
         model = DeepSeekIntentModel(settings)
@@ -106,6 +119,28 @@ def create_app(
     )
     async def resume(request: AgentResumeRequest) -> AgentResponse:
         return await service.resume(request)
+
+    @app.post(
+        "/internal/v1/skills/list",
+        response_model=SkillListResponse,
+        dependencies=[Depends(require_signature)],
+    )
+    async def list_skills() -> SkillListResponse:
+        try:
+            return await skill_catalog.list()
+        except SkillError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post(
+        "/internal/v1/skills/install",
+        response_model=SkillRecord,
+        dependencies=[Depends(require_signature)],
+    )
+    async def install_skill(request: SkillInstallRequest) -> SkillRecord:
+        try:
+            return await skill_catalog.install(request)
+        except SkillError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post(
         "/internal/v1/agent/stream",

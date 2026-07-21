@@ -7,10 +7,16 @@ import com.ruanzhu.doorhandlecatch.dto.chat.ChatSendMessageRequest;
 import com.ruanzhu.doorhandlecatch.dto.chat.ChatSessionResponse;
 import com.ruanzhu.doorhandlecatch.dto.chat.CheckpointSnapshotResponse;
 import com.ruanzhu.doorhandlecatch.dto.chat.AgentGraphHealthResponse;
+import com.ruanzhu.doorhandlecatch.dto.chat.AgentSkillInstallRequest;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonSkillInstallRequest;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonSkillListResponse;
+import com.ruanzhu.doorhandlecatch.dto.internal.PythonSkillRecord;
+import com.ruanzhu.doorhandlecatch.common.BusinessException;
 import com.ruanzhu.doorhandlecatch.service.AgentOrchestratorService;
 import com.ruanzhu.doorhandlecatch.service.AgentGraphRunMonitor;
 import com.ruanzhu.doorhandlecatch.service.ChatSessionService;
 import com.ruanzhu.doorhandlecatch.service.SpeechTranscriptionService;
+import com.ruanzhu.doorhandlecatch.service.PythonAssistantClient;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +39,7 @@ public class ChatAssistantController {
     private final AgentOrchestratorService agentOrchestratorService;
     private final AgentGraphRunMonitor agentGraphRunMonitor;
     private final SpeechTranscriptionService speechTranscriptionService;
+    private final PythonAssistantClient pythonAssistantClient;
 
     // ---- 会话管理 ----
 
@@ -61,6 +68,26 @@ public class ChatAssistantController {
     @GetMapping("/agent-health")
     public Result<AgentGraphHealthResponse> getAgentGraphHealth() {
         return Result.success(agentGraphRunMonitor.snapshot());
+    }
+
+    @GetMapping("/skills")
+    public Result<PythonSkillListResponse> listSkills(Authentication authentication) {
+        requireSkillAdmin(authentication);
+        return Result.success(pythonAssistantClient.listSkills());
+    }
+
+    @PostMapping("/skills/install")
+    public Result<PythonSkillRecord> installSkill(
+            Authentication authentication,
+            @Valid @RequestBody AgentSkillInstallRequest request) {
+        requireSkillAdmin(authentication);
+        PythonSkillInstallRequest internalRequest = PythonSkillInstallRequest.builder()
+                .repository(request.getRepository().toLowerCase(java.util.Locale.ROOT))
+                .path(request.getPath())
+                .ref(request.getRef())
+                .requestedBy(authentication.getName())
+                .build();
+        return Result.success(pythonAssistantClient.installSkill(internalRequest));
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
@@ -104,6 +131,16 @@ public class ChatAssistantController {
     @GetMapping("/session")
     public Result<ChatSessionResponse> getSessionLegacy(Authentication authentication) {
         return Result.success(chatSessionService.getOrCreateActiveSession(authentication.getName()));
+    }
+
+    private void requireSkillAdmin(Authentication authentication) {
+        boolean admin = authentication != null
+                && authentication.isAuthenticated()
+                && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        if (!admin) {
+            throw new BusinessException(403, "只有管理员可以下载 Skill");
+        }
     }
 
     @PostMapping("/messages")

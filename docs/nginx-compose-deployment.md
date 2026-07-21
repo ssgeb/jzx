@@ -134,6 +134,8 @@ Nginx 已为该接口配置：
 - 300 秒读写超时；
 - `X-Accel-Buffering: no`。
 
+Skill 下载结果保存在 Docker 命名卷 `assistant-skills` 中，容器重建不会丢失。下载成功只表示进入 `QUARANTINED` 隔离区，不会自动加载或执行。生产环境应在环境文件中缩短 `ASSISTANT_SKILL_ALLOWED_REPOSITORIES`，并把下载请求的 `ref` 固定为已审查的提交哈希。
+
 ## 7. 更新、停止与回滚
 
 重新构建并滚动启动：
@@ -155,7 +157,7 @@ git switch --detach <previous-commit>
 docker compose -f compose.nginx.yml up -d --build
 ```
 
-不要使用 `down -v`，除非明确需要删除共享运行目录卷。
+不要使用 `down -v`，除非明确需要同时删除共享运行目录和 Skill 隔离区数据卷。
 
 ## 8. 当前开发机说明
 

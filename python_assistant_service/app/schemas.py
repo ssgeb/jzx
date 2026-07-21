@@ -84,3 +84,53 @@ class HealthResponse(BaseModel):
     deep_agent_status: str = "MODEL_NOT_CONFIGURED"
     rag_chunks: int
     memory_configured: bool
+
+
+class SkillInstallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    repository: str = Field(min_length=3, max_length=200)
+    path: str = Field(min_length=1, max_length=500)
+    ref: str = Field(default="main", min_length=1, max_length=200)
+    requested_by: str = Field(min_length=1, max_length=100)
+
+    @field_validator("repository")
+    @classmethod
+    def repository_must_be_owner_and_name(cls, value: str) -> str:
+        import re
+
+        normalized = value.strip().lower()
+        component = r"[a-z0-9](?:[a-z0-9_.-]{0,99})"
+        if not re.fullmatch(rf"{component}/{component}", normalized):
+            raise ValueError("repository 必须使用 owner/repository 格式")
+        return normalized
+
+    @field_validator("path", "ref")
+    @classmethod
+    def source_part_must_be_safe(cls, value: str) -> str:
+        normalized = value.strip().replace("\\", "/")
+        if (
+            not normalized
+            or normalized.startswith("/")
+            or ".." in normalized.split("/")
+            or any(ord(char) < 32 for char in normalized)
+        ):
+            raise ValueError("Skill 来源路径或版本不安全")
+        return normalized.strip("/")
+
+
+class SkillRecord(BaseModel):
+    name: str
+    description: str
+    repository: str
+    source_path: str
+    ref: str
+    checksum: str
+    status: str
+    installed_at: str
+    installed_by: str
+
+
+class SkillListResponse(BaseModel):
+    enabled: bool
+    skills: list[SkillRecord] = Field(default_factory=list)

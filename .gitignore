@@ -58,6 +58,7 @@ uploads/
 result/
 ruanzhuss/
 mem0/
+runtime/
 
 ### Frontend dependencies and local tooling ###
 node_modules/

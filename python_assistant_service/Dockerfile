@@ -6,6 +6,8 @@ COPY python_assistant_service /app/python_assistant_service
 COPY legacy-service/src/main/resources/rag /app/legacy-service/src/main/resources/rag
 COPY README.md /app/README.md
 RUN pip install --no-cache-dir .
+RUN mkdir -p /app/runtime/assistant-skills \
+    && chown -R 65532:65532 /app/runtime
 
 USER 65532:65532
 EXPOSE 8090
