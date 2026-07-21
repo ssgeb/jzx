@@ -112,7 +112,7 @@ class HarnessDeepAgent:
             self._settings.deep_agent_enabled
             and self._settings.deepseek_enabled
             and self._settings.deepseek_api_key
-            and self._settings.deepseek_model == "deepseek-chat"
+            and self._settings.deep_agent_model == "deepseek-chat"
         )
 
     async def invoke(self, state: AgentState) -> AgentState | None:
@@ -181,7 +181,7 @@ class HarnessDeepAgent:
 
     def _build_model(self) -> BaseChatModel:
         return ChatDeepSeek(
-            model=self._settings.deepseek_model,
+            model=self._settings.deep_agent_model,
             api_key=self._settings.deepseek_api_key,
             api_base=self._settings.deepseek_base_url,
             temperature=0,

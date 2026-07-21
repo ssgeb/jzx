@@ -139,9 +139,9 @@ npm run dev
 
 ### Nginx + Docker Compose 生产部署
 
-项目提供 Nginx Web 服务器、API 反向代理和双 Spring Boot 实例负载均衡配置：
+项目提供 Nginx Web 服务器、API 反向代理、双 Spring Boot 实例和 Python Harness Deep Agent 的容器化配置：
 
-Docker/Compose 使用独立的 `deploy/docker.env`，只覆盖容器访问数据库、Redis、Kafka 和外部服务所需的地址、开关、凭据及 JVM 参数；它与本地开发使用的根目录 `.env` 职责不同。
+Docker/Compose 使用独立的 `deploy/docker.env`，只覆盖容器访问数据库、Redis、Kafka、DeepSeek 和外部服务所需的地址、开关、凭据及 JVM 参数；它与本地开发使用的根目录 `.env` 职责不同。Python 服务与 Java 内部工具端口只在 Compose 网络内可见。
 
 ```powershell
 Copy-Item deploy/docker.env.example deploy/docker.env

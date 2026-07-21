@@ -99,6 +99,23 @@ def build_harness(factory, tools=None, knowledge=None, memory=None):
     )
 
 
+def test_deep_agent_model_is_independent_from_legacy_router_model():
+    harness = HarnessDeepAgent(
+        Settings(
+            deep_agent_enabled=True,
+            deepseek_enabled=True,
+            deepseek_api_key="test-key",
+            deepseek_model="legacy-router-model",
+            deep_agent_model="deepseek-chat",
+        ),
+        RecordingTools(),
+        FixedKnowledge(),
+        FixedMemory(),
+    )
+
+    assert harness.available is True
+
+
 def test_harness_deep_agent_uses_four_restricted_subagents_and_fixed_java_tool():
     factory = RecordingFactory()
     tools = RecordingTools()

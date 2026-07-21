@@ -55,6 +55,25 @@ const { readFrontendFile, readProjectFile } = require('./helpers/project-source.
     assert.match(compose, /^\s{2}nginx:/m)
     assert.match(compose, /NGINX_PORT:-80}:80/)
     assert.match(compose, /condition:\s*service_healthy/)
+    assert.doesNotMatch(serviceBlock(compose, 'python-assistant'), /ports:/)
+    assert.doesNotMatch(serviceBlock(compose, 'backend-1'), /ports:/)
+    assert.doesNotMatch(serviceBlock(compose, 'backend-2'), /ports:/)
+  })
+
+  test('compose runs the Python Harness Agent with an internal Java tool callback', () => {
+    const compose = readProjectFile('compose.nginx.yml')
+    const dockerfile = readProjectFile('python_assistant_service', 'Dockerfile')
+    const nginx = readProjectFile('deploy', 'nginx', 'nginx.conf')
+
+    assert.match(compose, /^\s{2}python-assistant:/m)
+    assert.match(compose, /dockerfile:\s*python_assistant_service\/Dockerfile/)
+    assert.match(compose, /JAVA_AGENT_TOOL_BASE_URL:\s*http:\/\/nginx:8081/)
+    assert.match(serviceBlock(compose, 'python-assistant'), /"8090"/)
+    assert.match(dockerfile, /FROM python:3\.11-slim/)
+    assert.match(dockerfile, /internal\/v1\/health/)
+    assert.match(nginx, /listen 8081;/)
+    assert.match(nginx, /location \/internal\/v1\/agent-tools\//)
+    assert.match(nginx, /proxy_pass http:\/\/doorhandle_backend;/)
   })
 
   test('deployment environment example uses external services and placeholders', () => {
@@ -64,6 +83,10 @@ const { readFrontendFile, readProjectFile } = require('./helpers/project-source.
     assert.match(env, /REDIS_HOST=host\.docker\.internal/)
     assert.match(env, /APP_KAFKA_BOOTSTRAP_SERVERS=host\.docker\.internal:9092/)
     assert.match(env, /JWT_SECRET=replace-with-at-least-32-random-characters/)
+    assert.match(env, /CHAT_ASSISTANT_ENGINE=python/)
+    assert.match(env, /PYTHON_ASSISTANT_URL=http:\/\/python-assistant:8090/)
+    assert.match(env, /ASSISTANT_HMAC_SECRET=replace-with-at-least-32-random-characters/)
+    assert.match(env, /ASSISTANT_DEEP_AGENT_MODEL=deepseek-chat/)
     assert.doesNotMatch(env, /sk-[A-Za-z0-9]{16,}/)
     assert.match(gitignore, /^deploy\/docker\.env$/m)
   })

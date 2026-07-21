@@ -1,6 +1,6 @@
 # Nginx + Docker Compose 部署指南
 
-该方案启动一个 Nginx 网关和两个 Spring Boot 实例。Nginx 托管 Vue 静态资源，将 `/api` 请求按最少连接数分发至两个后端，并为智能助手 SSE 接口关闭代理缓冲。MySQL、Redis、Kafka、Mem0、OSS 和 DeepSeek 使用外部服务。
+该方案启动一个 Nginx 网关、两个 Spring Boot 实例和一个 Python Harness Agent。Nginx 托管 Vue 静态资源，将 `/api` 请求按最少连接数分发至两个后端，并为智能助手 SSE 接口关闭代理缓冲。Python 容器运行 Deep Agents，通过 Nginx 的容器内专用 `8081` 端口回调 Java 只读工具。MySQL、Redis、Kafka、Mem0、OSS 和 DeepSeek 使用外部服务。
 
 ## 1. 前置条件
 
@@ -32,7 +32,7 @@ vi deploy/docker.env
 export DOORHANDLE_ENV_FILE=deploy/docker.env
 ```
 
-必须替换数据库密码、JWT Secret、DeepSeek Key 和 OSS 凭据。根目录 `.env` 与 `deploy/docker.env` 均不得提交；仓库中只保留不含真实凭据的 `.example` 模板。
+必须替换数据库密码、JWT Secret、助手 HMAC Secret、DeepSeek Key 和 OSS 凭据。`ASSISTANT_DEEP_AGENT_MODEL` 应保持为支持工具调用的 `deepseek-chat`；它与 Java 使用的 `DEEPSEEK_MODEL` 相互独立。模型不兼容时，Harness Deep Agent 会进入确定性降级流程。根目录 `.env` 与 `deploy/docker.env` 均不得提交；仓库中只保留不含真实凭据的 `.example` 模板。
 
 如果暂时没有 Mem0，可设置：
 
@@ -71,9 +71,10 @@ NGINX_PORT=8088 docker compose -f compose.nginx.yml up -d --build
 docker compose -f compose.nginx.yml ps
 docker compose -f compose.nginx.yml logs --tail=100 nginx
 docker compose -f compose.nginx.yml logs --tail=100 backend-1 backend-2
+docker compose -f compose.nginx.yml logs --tail=100 python-assistant
 ```
 
-三个容器均应处于 running/healthy 状态。
+四个容器均应处于 running/healthy 状态。
 
 验证 Nginx Web 服务：
 
@@ -89,6 +90,14 @@ curl.exe -i http://localhost/api/auth/check
 ```
 
 未携带登录 Cookie 时，认证检查会返回未登录结果；能够收到 Spring Boot 的 JSON 响应即说明反向代理生效。默认 Nginx 仅代理 `/api/`，后端 Actuator 不对公网暴露。后端健康状态应通过 `docker compose ps` 或容器内健康检查确认。
+
+验证 Python Harness Agent 的容器内健康状态：
+
+```powershell
+docker compose -f compose.nginx.yml exec python-assistant python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8090/internal/v1/health').read().decode())"
+```
+
+返回结果中的 `deep_agent_configured` 为 `true`，表示 DeepSeek、Deep Agents 和 Harness 配置均已生效。Python 的 `8090`、Nginx 内部工具入口的 `8081` 都只在 Compose 网络中开放，没有映射到宿主机。Python 调用 `http://nginx:8081/internal/v1/agent-tools/**` 时仍需 HMAC 签名，Nginx 再按最少连接数转发到两个 Java 实例。
 
 ## 5. 验证负载均衡与故障切换
 
@@ -110,9 +119,11 @@ docker compose -f compose.nginx.yml stop backend-1
 docker compose -f compose.nginx.yml start backend-1
 ```
 
-## 6. 验证智能助手 SSE
+## 6. 验证 Harness Agent 与智能助手 SSE
 
 登录系统后发送智能助手消息，浏览器 Network 面板中的 `/api/chat-assistant/messages/stream` 应持续接收 `connected`、`status`、`chunk` 和 `done` 事件，而不是等待回答全部生成后一次返回。
+
+容器配置默认使用 `CHAT_ASSISTANT_ENGINE=python`。查询请求由 Deep Agent 规划并委派给检测、资源、报表或运维子 Agent；写请求、模型不可用或 Deep Agent 异常时进入确定性 LangGraph，Java 侧仍保留 `CHAT_ASSISTANT_FALLBACK_TO_JAVA=true` 作为跨进程最终兜底。
 
 Nginx 已为该接口配置：
 

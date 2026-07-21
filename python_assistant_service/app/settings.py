@@ -35,6 +35,7 @@ class Settings:
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
     deep_agent_enabled: bool = True
+    deep_agent_model: str = "deepseek-chat"
     deep_agent_max_iterations: int = 40
     deep_agent_model_timeout_seconds: float = 60.0
     deep_agent_model_max_retries: int = 1
@@ -74,6 +75,7 @@ class Settings:
             deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
             deep_agent_enabled=_as_bool(os.getenv("ASSISTANT_DEEP_AGENT_ENABLED"), True),
+            deep_agent_model=os.getenv("ASSISTANT_DEEP_AGENT_MODEL", "deepseek-chat"),
             deep_agent_max_iterations=int(os.getenv("ASSISTANT_DEEP_AGENT_MAX_ITERATIONS", "40")),
             deep_agent_model_timeout_seconds=float(os.getenv("ASSISTANT_DEEP_AGENT_MODEL_TIMEOUT_SECONDS", "60")),
             deep_agent_model_max_retries=int(os.getenv("ASSISTANT_DEEP_AGENT_MODEL_MAX_RETRIES", "1")),
