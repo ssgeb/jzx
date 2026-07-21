@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Any, Sequence
 
+import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -11,6 +12,7 @@ from python_assistant_service.app.deep_agent import (
     AGENT_DESCRIPTIONS,
     FILESYSTEM_AND_EXECUTION_TOOLS,
     HarnessDeepAgent,
+    ToolEvidence,
 )
 from python_assistant_service.app.schemas import AgentInvokeRequest
 from python_assistant_service.app.service import AgentService
@@ -124,8 +126,18 @@ def test_harness_deep_agent_uses_four_restricted_subagents_and_fixed_java_tool()
     result = asyncio.run(harness.invoke(build_message_state(request())))
 
     assert result["result_content"] == "Harness 综合结论"
-    assert result["node_trace"] == ["context", "harness_deep_agent"]
+    assert result["node_trace"] == [
+        "context",
+        "harness_deep_agent",
+        "deep_agent_quality_gate",
+    ]
     assert result["exit_reason"] == "COMPLETE"
+    evidence = result["data_context"]["deepAgentEvidence"]
+    assert len(evidence) == 1
+    assert evidence[0]["agent"] == "DETECTION"
+    assert evidence[0]["tool"] == "query_detection"
+    assert len(evidence[0]["questionHash"]) == 12
+    assert "实时数据" not in json.dumps(result["data_context"], ensure_ascii=False)
     assert factory.kwargs["tools"] == []
     assert factory.config == {"recursion_limit": 36}
     assert {item["name"] for item in factory.kwargs["subagents"]} == {
@@ -182,7 +194,7 @@ def test_registered_harness_profile_hides_file_and_execution_tools_from_model():
     )
     state = build_message_state(request())
     query_tools = {
-        agent: harness._build_query_tool(agent, state, "", "")
+        agent: harness._build_query_tool(agent, state, "", "", ToolEvidence())
         for agent in AGENT_DESCRIPTIONS
     }
     subagents = [
@@ -220,6 +232,31 @@ def test_harness_deep_agent_refuses_write_intent_before_model_or_tool_call():
     assert result is None
     assert factory.calls == 0
     assert tools.calls == []
+
+
+class NoToolCompiledAgent:
+    async def ainvoke(self, inputs, config):
+        return {"messages": [{"role": "assistant", "content": "模型直接回答"}]}
+
+
+def test_harness_rejects_model_answer_without_java_tool_evidence():
+    harness = build_harness(lambda *args, **kwargs: NoToolCompiledAgent())
+
+    with pytest.raises(RuntimeError, match="未调用可信业务工具"):
+        asyncio.run(harness.invoke(build_message_state(request())))
+
+
+class EmptyTools(RecordingTools):
+    async def execute(self, agent, operation, payload, idempotency_key):
+        self.calls.append((agent, operation, payload, idempotency_key))
+        return {"content": "  "}
+
+
+def test_harness_rejects_empty_java_tool_result():
+    harness = build_harness(RecordingFactory(), tools=EmptyTools())
+
+    with pytest.raises(RuntimeError, match="业务工具返回空内容"):
+        asyncio.run(harness.invoke(build_message_state(request())))
 
 
 class BrokenContext:

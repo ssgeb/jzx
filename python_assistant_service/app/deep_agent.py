@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import threading
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from deepagents import (
@@ -49,6 +50,12 @@ AGENT_DESCRIPTIONS = {
 
 _PROFILE_LOCK = threading.Lock()
 _PROFILE_REGISTERED = False
+
+
+@dataclass
+class ToolEvidence:
+    successful_calls: list[dict[str, str]] = field(default_factory=list)
+    failed_agents: list[str] = field(default_factory=list)
 
 
 def deep_agent_configuration_status(settings: Settings) -> str:
@@ -135,8 +142,11 @@ class HarnessDeepAgent:
         rag_context, memories, degraded = await self._load_context(state, query)
         memory_context = format_memories(memories)
         model = self._model or self._build_model()
+        evidence = ToolEvidence()
         tools = {
-            agent: self._build_query_tool(agent, state, rag_context, memory_context)
+            agent: self._build_query_tool(
+                agent, state, rag_context, memory_context, evidence
+            )
             for agent in AGENT_DESCRIPTIONS
         }
         subagents = [
@@ -163,7 +173,11 @@ class HarnessDeepAgent:
         content = self._last_answer(result)
         if not content:
             raise RuntimeError("Harness Deep Agent 未返回有效回答")
-        return self._complete_state(state, content, rag_context, memories, degraded)
+        if not evidence.successful_calls:
+            raise RuntimeError("Harness Deep Agent 未调用可信业务工具，拒绝无证据回答")
+        return self._complete_state(
+            state, content, rag_context, memories, degraded, evidence
+        )
 
     async def _load_context(
         self, state: AgentState, query: str
@@ -207,6 +221,7 @@ class HarnessDeepAgent:
         state: AgentState,
         rag_context: str,
         memory_context: str,
+        evidence: ToolEvidence,
     ):
         tool_name = f"query_{agent.lower()}"
 
@@ -222,20 +237,35 @@ class HarnessDeepAgent:
             if memory_context:
                 prompt_parts.append("当前用户历史记忆：\n" + memory_context)
             digest = hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
-            result = await self._tool_client.execute(
-                agent,
-                "query",
+            try:
+                result = await self._tool_client.execute(
+                    agent,
+                    "query",
+                    {
+                        "requestId": state.get("request_id"),
+                        "tenantUserId": state.get("tenant_user_id"),
+                        "username": state.get("username"),
+                        "sessionId": state.get("thread_id"),
+                        "prompt": "\n\n".join(prompt_parts),
+                        "slots": dict(state.get("slots", {})),
+                        "currentRoute": state.get("current_route", ""),
+                        "currentPageTitle": state.get("current_page_title", ""),
+                    },
+                    f"{state.get('idempotency_key', '')}:deep:{agent.lower()}:{digest}",
+                )
+            except Exception:
+                evidence.failed_agents.append(agent)
+                raise
+            content = result.get("content") or result.get("message")
+            if content is None or not str(content).strip():
+                evidence.failed_agents.append(agent)
+                raise RuntimeError(f"{agent} 业务工具返回空内容")
+            evidence.successful_calls.append(
                 {
-                    "requestId": state.get("request_id"),
-                    "tenantUserId": state.get("tenant_user_id"),
-                    "username": state.get("username"),
-                    "sessionId": state.get("thread_id"),
-                    "prompt": "\n\n".join(prompt_parts),
-                    "slots": dict(state.get("slots", {})),
-                    "currentRoute": state.get("current_route", ""),
-                    "currentPageTitle": state.get("current_page_title", ""),
-                },
-                f"{state.get('idempotency_key', '')}:deep:{agent.lower()}:{digest}",
+                    "agent": agent,
+                    "tool": tool_name,
+                    "questionHash": digest,
+                }
             )
             return json.dumps(result, ensure_ascii=False)[:12000]
 
@@ -276,6 +306,7 @@ class HarnessDeepAgent:
         rag_context: str,
         memories: list[dict[str, Any]],
         degraded: list[str],
+        evidence: ToolEvidence,
     ) -> AgentState:
         result = AgentState(**state)
         route = keyword_route(str(state.get("user_input", "")))
@@ -287,7 +318,11 @@ class HarnessDeepAgent:
                 {"role": "assistant", "content": content, "turn": turn},
             ]
         )
-        trace = list(state.get("node_trace", [])) + ["context", "harness_deep_agent"]
+        trace = list(state.get("node_trace", [])) + [
+            "context",
+            "harness_deep_agent",
+            "deep_agent_quality_gate",
+        ]
         result.update(
             turn=turn,
             route_decision=route,
@@ -296,6 +331,10 @@ class HarnessDeepAgent:
             user_memories=memories,
             user_memory_context=format_memories(memories),
             context_degraded=degraded,
+            data_context={
+                "deepAgentEvidence": evidence.successful_calls,
+                "failedToolAgents": evidence.failed_agents,
+            },
             result_content=content,
             result_type="TEXT",
             phase="RESPONDING",

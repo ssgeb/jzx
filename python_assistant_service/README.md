@@ -23,4 +23,6 @@ Python 会直接加载系统手册 Markdown 执行本地 RAG，并按 `tenant_us
 
 Harness 主 Agent 只看到 `write_todos` 和 `task`；检测、资源、报表和运维四个子 Agent 各自只拥有一个固定的 Java 只读工具。Deep Agents 默认的文件读写、Shell 执行和通用子 Agent 均已禁用。写操作不交给大模型直接执行，仍使用 Java 人工确认和 CAS 状态转移。
 
+业务回答必须至少包含一次成功、非空的 Java 工具调用证据；模型绕过工具直接回答、工具异常或返回空内容时，质量门会拒绝该结果并降级到确定性 LangGraph。Checkpoint 只记录 Agent、工具名和问题摘要哈希，不保存完整工具响应。
+
 Deep Agent 当前通过独立的 `ASSISTANT_DEEP_AGENT_MODEL` 使用具备工具调用能力的 `deepseek-chat`，不会覆盖 Java 或确定性路由使用的 `DEEPSEEK_MODEL`。没有引入 Skill 或 FastMCP。Python 不直接访问核心业务表；Deep Agent 未配置、处理写请求或执行异常时，自动降级到原有确定性 LangGraph。

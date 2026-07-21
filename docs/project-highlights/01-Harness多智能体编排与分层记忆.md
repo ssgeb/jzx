@@ -78,8 +78,8 @@
               └───────────────────────────┤
                                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  步骤三：主 Agent 汇总 → Java 保存 Checkpoint/消息 → HTTP 或 SSE  │
-│  Deep Agent 不可用或异常 → 确定性 LangGraph 降级                  │
+│  步骤三：主 Agent 汇总 → 工具证据质量门 → 保存消息 → HTTP/SSE   │
+│  无有效工具证据、Deep Agent 不可用或异常 → 确定性 LangGraph 降级 │
 └────────────────────────────────────────────────────────────┘
 ~~~
 
@@ -442,6 +442,18 @@ PENDING ───────用户取消────────> CANCELLED
 
 DeepSeek 模型层最多自动重试一次，但业务工具不自动重试。Deep Agent 整体异常时，服务使用同一份已验证请求状态重新进入确定性 LangGraph；RAG 或 Mem0 异常只移除相应上下文，不中断主业务。写操作从一开始就不进入 Deep Agent，因此不会因为查询规划重试而被重复执行。如后续为工具增加重试，应只对已证明幂等的查询或携幂等键的写入开启。
 
+#### 3.3.4 回答达到什么条件才能返回
+
+主 Agent 的提示词要求以 Java 业务工具结果为准，但安全性不能只依赖提示词。代码还执行以下确定性质量门：
+
+1. 子 Agent 必须实际调用自己绑定的 Java 只读工具，模型直接生成的无工具回答不予采用。
+2. Java 工具必须成功返回非空业务内容；异常或空结果不能登记为有效证据。
+3. 每次成功调用记录专业 Agent、工具名称和问题摘要哈希，不保存完整问题或工具原文，形成 `data_context.deepAgentEvidence`。
+4. 最终回答必须非空，并在轨迹中经过 `deep_agent_quality_gate`。
+5. 任一条件不满足就抛出编排异常，由 `AgentService` 使用原始已验证状态进入确定性 LangGraph，而不是把可疑回答返回给用户。
+
+这套质量门证明“回答读取过可信业务数据”，但不宣称能够数学证明每句话都完全正确。最终准确性仍依赖 Java 数据质量、专业子 Agent 提示词和业务测试，因此项目同时保留操作人工确认、审计记录与降级链路。
+
 ### 3.4 Agent 失败后如何恢复
 
 #### 3.4.1 失败处理与恢复框架
@@ -473,6 +485,7 @@ DeepSeek 模型层最多自动重试一次，但业务工具不自动重试。De
 | --- | --- | --- |
 | 路由模型暂时不可用 | 降级为确定性关键词路由 | 无需重试即可继续编排 |
 | RAG 或 Mem0 暂时不可用 | 记录 `context_degraded` 并使用空上下文 | 业务 Agent 继续执行，Mem0 写入也不阻塞主响应 |
+| Deep Agent 未调用工具或工具返回空内容 | 质量门拒绝无证据回答 | 使用同一请求状态降级到确定性 LangGraph |
 | 节点最终执行失败 | 写入错误，进入 Fallback，保存检查点 | 用户补充信息或重新发起请求 |
 | 状态图递归或节点访问超限 | LangGraph 或节点守卫终止路径 | 返回异常或 Fallback，避免继续消耗资源 |
 | 等待人工确认 | 保存当前节点、状态和待确认动作后暂停 | 用户确认后执行 `resume(tenant, sessionId, confirmed=true)` |
@@ -626,7 +639,26 @@ graph = create_deep_agent(
 
 主 Agent 的业务工具列表为空，只保留 Deep Agents 提供的任务清单 `write_todos` 和子任务委派 `task`。文件读写、全文搜索、Shell 执行以及默认通用子 Agent 全部被禁用。四个专业子 Agent 分别只绑定检测、资源、报表或运维查询工具；工具闭包从经过校验的请求状态中固定取得企业、用户、会话、请求和幂等信息，模型不能自行伪造这些身份字段。
 
-### 6.4 条件抢占待确认动作
+### 6.4 工具证据质量门
+
+~~~python
+content = result.get("content") or result.get("message")
+if content is None or not str(content).strip():
+    raise RuntimeError(f"{agent} 业务工具返回空内容")
+
+evidence.successful_calls.append({
+    "agent": agent,
+    "tool": tool_name,
+    "questionHash": digest,
+})
+
+if not evidence.successful_calls:
+    raise RuntimeError("Harness Deep Agent 未调用可信业务工具，拒绝无证据回答")
+~~~
+
+证据由服务端工具闭包登记，模型不能直接修改。Checkpoint 只保存 Agent、工具和问题哈希等审计元数据，不复制可能很大的工具原始结果。
+
+### 6.5 条件抢占待确认动作
 
 ~~~java
 boolean claimed = chatSessionService.transitionPendingAction(
@@ -794,7 +826,7 @@ segments, _ = model.transcribe(
 - SpeechTranscriptionServiceImplTest：文件校验、服务白名单、响应解析和异常处理。
 - test_asr_service.py：健康检查、格式处理、文件大小限制和临时文件清理。
 - python_assistant_service/tests/test_graph.py：Python 节点路由、上下文注入、降级、Checkpoint 过滤和异步记忆写入。
-- python_assistant_service/tests/test_deep_agent.py：验证主 Agent 工具白名单、四类子 Agent 工具隔离、企业与用户上下文固定传递、写意图旁路、上下文降级和异常回退。
+- python_assistant_service/tests/test_deep_agent.py：验证主 Agent 工具白名单、四类子 Agent 工具隔离、企业与用户上下文固定传递、写意图旁路、上下文降级、无证据回答拒绝、空工具结果拒绝和异常回退。
 - PythonAssistantClientTest：启动本地 HTTP 服务，验证 Java 发出的精确 JSON、HMAC 签名、租户字段以及 Python 响应反序列化契约。
 - python_assistant_service/tests/test_security.py：验证签名、防重放、SSE 事件以及 `READY`、`DISABLED`、`MODEL_NOT_CONFIGURED`、`UNSUPPORTED_MODEL` 健康状态。
 - python_assistant_service/tests/test_knowledge.py：本地 Markdown 分块与相关性检索。
