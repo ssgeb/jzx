@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 from .clients import DeepSeekIntentModel, JavaToolClient
-from .deep_agent import HarnessDeepAgent
+from .deep_agent import HarnessDeepAgent, deep_agent_configuration_status
 from .graph import AgentGraph
 from .knowledge import LocalKnowledgeBase
 from .memory import MemoryServiceClient
@@ -73,6 +73,11 @@ def create_app(
 
     @app.get("/internal/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
+        deep_agent_status = (
+            deep_agent.configuration_status
+            if deep_agent is not None
+            else deep_agent_configuration_status(settings)
+        )
         return HealthResponse(
             status="UP",
             service=settings.service_name,
@@ -80,7 +85,8 @@ def create_app(
             signature_required=settings.require_signature,
             java_tools_configured=bool(settings.java_tool_base_url),
             model_configured=bool(settings.deepseek_enabled and settings.deepseek_api_key),
-            deep_agent_configured=bool(deep_agent is not None and deep_agent.available),
+            deep_agent_configured=deep_agent_status == "READY",
+            deep_agent_status=deep_agent_status,
             rag_chunks=knowledge.chunk_count if knowledge is not None else 0,
             memory_configured=settings.memory_enabled and bool(settings.memory_service_url),
         )

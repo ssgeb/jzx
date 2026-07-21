@@ -81,5 +81,6 @@ class HealthResponse(BaseModel):
     java_tools_configured: bool
     model_configured: bool
     deep_agent_configured: bool = False
+    deep_agent_status: str = "MODEL_NOT_CONFIGURED"
     rag_chunks: int
     memory_configured: bool

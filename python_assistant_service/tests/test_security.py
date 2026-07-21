@@ -4,6 +4,7 @@ import json
 import time
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from python_assistant_service.app.main import create_app
@@ -113,3 +114,42 @@ def test_health_does_not_expose_secret():
     assert response.status_code == 200
     assert response.json()["status"] == "UP"
     assert "secret" not in response.text.lower()
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected"),
+    [
+        (Settings(deep_agent_enabled=False), "DISABLED"),
+        (
+            Settings(deep_agent_enabled=True, deepseek_enabled=True),
+            "MODEL_NOT_CONFIGURED",
+        ),
+        (
+            Settings(
+                deep_agent_enabled=True,
+                deepseek_enabled=True,
+                deepseek_api_key="test-key",
+                deep_agent_model="deepseek-reasoner",
+            ),
+            "UNSUPPORTED_MODEL",
+        ),
+        (
+            Settings(
+                deep_agent_enabled=True,
+                deepseek_enabled=True,
+                deepseek_api_key="test-key",
+                deep_agent_model="deepseek-chat",
+            ),
+            "READY",
+        ),
+    ],
+)
+def test_health_explains_deep_agent_configuration(settings, expected):
+    app = create_app(settings, StubService(), InMemoryReplayGuard())
+
+    with TestClient(app) as client:
+        response = client.get("/internal/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["deep_agent_status"] == expected
+    assert response.json()["deep_agent_configured"] is (expected == "READY")

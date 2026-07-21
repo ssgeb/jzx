@@ -795,6 +795,8 @@ segments, _ = model.transcribe(
 - test_asr_service.py：健康检查、格式处理、文件大小限制和临时文件清理。
 - python_assistant_service/tests/test_graph.py：Python 节点路由、上下文注入、降级、Checkpoint 过滤和异步记忆写入。
 - python_assistant_service/tests/test_deep_agent.py：验证主 Agent 工具白名单、四类子 Agent 工具隔离、企业与用户上下文固定传递、写意图旁路、上下文降级和异常回退。
+- PythonAssistantClientTest：启动本地 HTTP 服务，验证 Java 发出的精确 JSON、HMAC 签名、租户字段以及 Python 响应反序列化契约。
+- python_assistant_service/tests/test_security.py：验证签名、防重放、SSE 事件以及 `READY`、`DISABLED`、`MODEL_NOT_CONFIGURED`、`UNSUPPORTED_MODEL` 健康状态。
 - python_assistant_service/tests/test_knowledge.py：本地 Markdown 分块与相关性检索。
 - python_assistant_service/tests/test_memory.py：Mem0 用户/会话作用域与敏感数据脱敏。
 

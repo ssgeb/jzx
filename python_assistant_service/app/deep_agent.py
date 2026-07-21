@@ -51,6 +51,17 @@ _PROFILE_LOCK = threading.Lock()
 _PROFILE_REGISTERED = False
 
 
+def deep_agent_configuration_status(settings: Settings) -> str:
+    """返回不包含密钥的 Deep Agent 配置状态，供健康检查和运行判断共用。"""
+    if not settings.deep_agent_enabled:
+        return "DISABLED"
+    if not settings.deepseek_enabled or not settings.deepseek_api_key:
+        return "MODEL_NOT_CONFIGURED"
+    if settings.deep_agent_model != "deepseek-chat":
+        return "UNSUPPORTED_MODEL"
+    return "READY"
+
+
 class KnowledgeRetriever(Protocol):
     async def retrieve(self, query: str) -> str: ...
 
@@ -108,12 +119,13 @@ class HarnessDeepAgent:
     def available(self) -> bool:
         if self._model is not None:
             return self._settings.deep_agent_enabled
-        return bool(
-            self._settings.deep_agent_enabled
-            and self._settings.deepseek_enabled
-            and self._settings.deepseek_api_key
-            and self._settings.deep_agent_model == "deepseek-chat"
-        )
+        return deep_agent_configuration_status(self._settings) == "READY"
+
+    @property
+    def configuration_status(self) -> str:
+        if self._model is not None:
+            return "READY" if self._settings.deep_agent_enabled else "DISABLED"
+        return deep_agent_configuration_status(self._settings)
 
     async def invoke(self, state: AgentState) -> AgentState | None:
         query = str(state.get("user_input", "")).strip()

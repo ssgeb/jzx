@@ -97,7 +97,9 @@ curl.exe -i http://localhost/api/auth/check
 docker compose -f compose.nginx.yml exec python-assistant python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8090/internal/v1/health').read().decode())"
 ```
 
-返回结果中的 `deep_agent_configured` 为 `true`，表示 DeepSeek、Deep Agents 和 Harness 配置均已生效。Python 的 `8090`、Nginx 内部工具入口的 `8081` 都只在 Compose 网络中开放，没有映射到宿主机。Python 调用 `http://nginx:8081/internal/v1/agent-tools/**` 时仍需 HMAC 签名，Nginx 再按最少连接数转发到两个 Java 实例。
+返回结果中的 `deep_agent_configured` 为 `true`，表示 DeepSeek、Deep Agents 和 Harness 配置均已生效。`deep_agent_status` 会进一步说明配置状态：`READY` 表示可用，`DISABLED` 表示被主动关闭，`MODEL_NOT_CONFIGURED` 表示模型开关或密钥缺失，`UNSUPPORTED_MODEL` 表示模型不支持当前 Harness 工具调用。健康接口不会返回 API Key 或 HMAC Secret。
+
+Python 的 `8090`、Nginx 内部工具入口的 `8081` 都只在 Compose 网络中开放，没有映射到宿主机。Python 调用 `http://nginx:8081/internal/v1/agent-tools/**` 时仍需 HMAC 签名，Nginx 再按最少连接数转发到两个 Java 实例。
 
 ## 5. 验证负载均衡与故障切换
 
