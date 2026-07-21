@@ -4,15 +4,18 @@
 
 ## 1. 本章目标
 
-本章独立讲解 Harness Agent 如何使用 Python LangGraph 将自然语言请求转换为可路由、可恢复、可确认的业务流程，以及 MySQL、Mem0 和本地 Markdown 知识库分别承担什么记忆职责。Java 编排实现仍作为可配置的兼容回退链路，不是 Python 模式下的主调度器。
+本章独立讲解 Harness Agent 如何使用 Python Deep Agents 进行任务规划、上下文管理和专业子 Agent 委派，以及 Java 安全边界、MySQL、Mem0 和本地 Markdown 知识库如何协同。Deep Agents 底层仍使用 LangGraph；原有确定性 LangGraph 保留为写操作确认、无模型配置和异常降级链路。
 
 ### 1.1 术语翻译与作用
 
 | 英文术语 | 中文名称 | 在本项目中的作用 |
 | --- | --- | --- |
 | Harness Agent | 智能体编排框架 | 组织多个业务智能体协同处理用户请求 |
+| Deep Agents | 深度智能体 Harness | 内置任务规划、上下文压缩和子 Agent 委派的主编排器 |
 | Agent | 智能体 | 负责检测、资源、报表或运维等一种业务能力 |
-| LangGraph StateGraph | LangGraph 状态图 | Python 主链路按节点和条件边控制智能体流程 |
+| `write_todos` | 任务清单工具 | Harness 主 Agent 对复杂问题分步并跟踪状态 |
+| `task` | 子 Agent 委派工具 | 把隔离的子任务交给检测、资源、报表或运维专家 |
+| LangGraph StateGraph | LangGraph 状态图 | Deep Agents 的底层执行时，也承担确定性降级流程 |
 | Checkpoint | 检查点 | 将会话执行状态持久化，支持中断后恢复 |
 | RouterNode | 路由节点 | 识别用户意图并选择目标智能体 |
 | SlotFillingNode | 槽位补全节点 | 发现缺失参数并继续向用户追问 |
@@ -37,6 +40,52 @@
 - 回答脱离数据库和企业知识库。
 
 ## 3. 模块框架图
+
+### 3.0.1 当前 Deep Agent 主链路
+
+~~~text
+用户输入问题或操作指令
+        │
+        ▼
+┌────────────────────────────────────────────────────────────┐
+│  步骤一：Java 安全边界                                      │
+│                                                              │
+│  租户/用户/会话校验 → 限流 → 恢复 MySQL Checkpoint          │
+│  组装带 HMAC 签名、防重放与幂等键的 Python 请求             │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                      是否为写操作？
+                           │
+                    ┌──────┴──────┐
+                    │             │
+                   是             否
+                    │             │
+                    ▼             ▼
+┌───────────────────────────┐  ┌───────────────────────────┐
+│ 确定性 LangGraph       │  │ 步骤二：Deep Agent      │
+│ 槽位补全 → 人工确认   │  │ 加载本地 RAG + Mem0      │
+│ CAS 抢占后调用 Java 写工具 │  │ write_todos 分解复杂目标  │
+└─────────────┬─────────────┘  └─────────────┬─────────────┘
+              │                           │ task 只能委派
+              │                           ▼
+              │      检测子 Agent / 资源子 Agent / 报表子 Agent / 运维子 Agent
+              │                           │
+              │                 各自仅一个 Java 只读工具
+              │                           │ HMAC HTTP
+              │                           ▼
+              │                 Java 租户数据与业务 Service
+              │                           │
+              └───────────────────────────┤
+                                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│  步骤三：主 Agent 汇总 → Java 保存 Checkpoint/消息 → HTTP 或 SSE  │
+│  Deep Agent 不可用或异常 → 确定性 LangGraph 降级                  │
+└────────────────────────────────────────────────────────────┘
+~~~
+
+### 3.0.2 写操作与降级状态图
+
+下图为原有确定性 LangGraph，当请求包含写意图、Deep Agent 未配置或执行失败时使用：
 
 ~~~text
 用户输入问题或操作指令
@@ -95,7 +144,7 @@
 
 #### 3.1.1 核心结论
 
-项目中的多个 Agent 不通过 Kafka、RPC 或 HTTP 互相发送消息，也不会彼此自由对话。系统采用“中心路由 + 共享状态”的黑板模式：Python `router` 节点负责决定下一步由谁执行，所有节点通过同一个 `AgentState` 读取输入、补充信息并写回结果，LangGraph 根据状态中的意图和阶段选择下一节点。只有跨语言边界使用 HTTP：Python 专业 Agent 通过 HMAC 签名的固定内部接口调用 Java 业务能力。
+查询链路中，Harness 主 Agent 通过 Deep Agents 内置 `task` 工具把子任务交给专业子 Agent；子 Agent 在隔离上下文中完成工作，只向主 Agent 返回一份最终报告。子 Agent 之间没有点对点消息通道。写操作和降级链路仍使用“中心路由 + `AgentState`”状态图。只有跨语言边界使用 HTTP：每个 Python 专业子 Agent 通过 HMAC 签名的固定只读接口调用 Java 业务能力。
 
 | 英文术语 | 中文名称 | 项目中的含义 |
 | --- | --- | --- |
@@ -238,27 +287,27 @@
 
 #### 3.1.6 当前能力边界
 
-当前实现属于中心路由型多 Agent，而不是多个 Agent 自主讨论型架构：
+当前实现属于受限 Supervisor 型多 Agent：
 
-- 一次路由通常只选择一个专业 Agent 执行。
+- Harness 主 Agent 可对复杂查询使用 `write_todos` 分步，并通过 `task` 委派一个或多个专业 Agent。
 - Agent 之间没有点对点消息通道。
-- 没有多个 Agent 并行回答后投票或仲裁。
-- 没有 Supervisor Agent 汇总多个专业 Agent 的不同意见。
-- 协作信息必须写入 `AgentState`，不能依赖某个 Agent 的进程内私有变量。
+- 专业子 Agent 只返回一份精简报告，由 Harness 主 Agent 统一汇总；当前没有投票或裁判模型。
+- 子 Agent 是短生命、隔离上下文，不保留自己的私有长期状态。
+- 写操作不进入 Deep Agent 工具循环，必须走 Java 人工确认和 CAS 抢占。
 
 ### 3.2 主 Agent 与子 Agent 如何协同
 
 #### 3.2.1 项目中的“主 Agent”是什么
 
-本项目没有实现一个可以自由思考、再和多个子 Agent 讨论的 Supervisor 大模型。这里所说的“主 Agent”是逻辑上的编排层，由 Java 边界层与 Python 调度层共同承担：
+项目已实现受限的 Harness Supervisor。它可以规划和委派查询任务，但不是拥有任意工具的通用自治 Agent。“主 Agent”由 Java 边界层与 Python Deep Agents 调度层共同承担：
 
 | 组件 | 主 Agent 职责 |
 | --- | --- |
 | Java `AgentOrchestratorServiceImpl` | 校验租户、用户和会话，恢复 MySQL Checkpoint，调用 Python 并保存最终消息 |
-| Python `AgentGraph` | 装载 RAG 与 Mem0 上下文，按 LangGraph 节点和条件边执行，进入回答或降级节点 |
-| Python `router` | 识别意图、目标 Agent、已有槽位和是否属于修改操作 |
+| Python `HarnessDeepAgent` | 装载 RAG 与 Mem0，使用 `write_todos` 规划，通过 `task` 委派并汇总子 Agent 结论 |
+| Python `AgentGraph` | 拦截写操作，负责槽位补全、人工确认和 Deep Agent 异常时的确定性降级 |
 
-检测、资源、报表和运维节点是专业子 Agent。子 Agent 只处理自己负责的业务，不负责决定整张图的执行顺序，也不能绕过编排层直接调度另一个子 Agent。
+检测、资源、报表和运维是四个 Deep Agents 专业子 Agent。子 Agent 只处理自己负责的业务，工具列表中只有对应领域的 Java 只读接口，不能绕过主 Agent 调度另一个子 Agent。
 
 `SlotFillingNode`、`HumanConfirmNode`、`ResponderNode` 和 `FallbackNode` 属于控制节点：它们负责补参数、人工确认、统一回答和异常兜底，不属于专业业务子 Agent。
 
@@ -278,10 +327,10 @@
                            │ 共享 AgentState
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Python 主 Agent 调度内核：LangGraph + router               │
+│  Python 主 Agent 调度内核：Deep Agents + LangGraph         │
 │                                                              │
-│  context 注入 RAG/Mem0，写入 intent、targetAgent、slots    │
-│  通过条件边选择一个专业子 Agent                              │
+│  注入 RAG/Mem0，write_todos 规划，task 委派子 Agent     │
+│  简单问题委派一个，跨域问题可委派多个专家               │
 └──────────────────────────┬───────────────────────────────────┘
                            │
              ┌─────────────┼─────────────┬─────────────┐
@@ -306,12 +355,12 @@
 
 1. 编排服务从登录态构建 `TenantContext`，校验会话属于当前用户。
 2. 编排服务从 MySQL Checkpoint 选择性恢复允许跨轮保留的字段，再注入本轮输入。
-3. Python `context` 节点检索本地 RAG 和 Mem0，`router` 再把路由决定写入 `AgentState`。
-4. LangGraph 根据 `intent`、会话阶段和确认状态选择控制节点或一个专业子 Agent。
-5. 子 Agent 通过 HMAC 签名 HTTP 调用 Java 受限业务工具，把结构化结果写回 `AgentState`，不直接向前端返回。
+3. Python 安全门先检查写意图：写操作转确定性确认流程，只有查询进入 Deep Agent。
+4. Harness 主 Agent 检索本地 RAG 和 Mem0，必要时使用 `write_todos` 分解任务，再通过 `task` 委派专业子 Agent。
+5. 子 Agent 通过 HMAC 签名 HTTP 调用自己唯一的 Java 只读工具，向主 Agent 返回精简结论。
 6. 回答节点和编排服务统一保存结果，通过普通 HTTP 或 SSE 输出。
 
-当前 Python LangGraph 顺序执行节点。`AgentState` 是节点间的状态契约，不表示四个专业子 Agent 会在当前版本中同时并行执行。
+Deep Agents 使用隔离上下文执行子 Agent，主 Agent 只接收每个子 Agent 的最终报告，避免把大量中间工具结果塞入主上下文。确定性 `AgentState` 仍是 Java–Python 持久化契约和写操作恢复载体。
 
 ### 3.3 如何保证 Agent 执行流程安全
 
@@ -323,6 +372,7 @@
 | 状态传播 | `tenant_user_id` 写入 `AgentState`，缺失时 `requireTenantContext()` 直接失败 | 防止节点脱离真实身份执行 |
 | 参数完整性 | Slot Filling 收集任务号、工单号等必需参数 | 防止基于不完整参数调用业务服务 |
 | 高风险操作 | 修改意图必须经过 `HumanConfirmNode`，先预览、再确认 | 防止模型直接执行返工、放行、报废等操作 |
+| 工具最小权限 | 主 Agent 只拥有 `task` 和 `write_todos`；四个子 Agent 各自只有一个固定的 Java 只读工具 | 防止提示注入把查询能力扩大为文件、命令或业务写权限 |
 | 运行边界 | LangGraph 递归上限、节点访问次数和外部调用超时 | 防止死循环和资源无限占用 |
 | 跨语言边界 | HMAC 签名、时间窗、防重放和幂等键 | 防止内部工具被伪造请求或重复执行 |
 
@@ -336,8 +386,8 @@
 └──────────────────────────┬───────────────────────────────────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  步骤二：路由与参数校验                                    │
-│  参数不完整 → 只追问，不调用专业子 Agent                    │
+│  步骤二：意图与工具边界校验                                │
+│  写操作 → 确定性流程；查询 → Deep Agent 规划与委派          │
 └──────────────────────────┬───────────────────────────────────┘
                            ▼
                     查询还是修改？
@@ -346,15 +396,15 @@
                     查询         修改
                      │           │
                      ▼           ▼
-               专业子 Agent   保存待确认动作
+               受限 Deep Agent  保存待确认动作
                                  │
                                  ▼
                          用户明确确认后恢复
                      └─────┬─────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  步骤三：运行守卫                                          │
-│  状态图步数或节点访问超限、节点异常 → Fallback       │
+│  步骤三：运行守卫与降级                                    │
+│  模型超时、Deep Agent 异常或状态图超限 → 确定性 Fallback   │
 └──────────────────────────┬───────────────────────────────────┘
                            ▼
              保存 Checkpoint、审计状态并返回结果
@@ -381,13 +431,16 @@ PENDING ───────用户取消────────> CANCELLED
 
 | 守卫 | 当前默认值 | 触发后的处理 |
 | --- | ---: | --- |
-| LangGraph 最大递归步数 | 15 | LangGraph 终止超限调度，请求按异常处理 |
-| 单节点最大访问次数 | 4 | 写入 `error`，后续进入 Fallback |
+| Deep Agent 最大迭代次数 | 40 | 终止自治查询，整轮降级到确定性 LangGraph |
+| DeepSeek 单次模型调用超时 | 60 秒 | Deep Agent 失败并进入确定性降级链路 |
+| DeepSeek 模型自动重试 | 1 次 | 只重试模型层瞬时故障，不自动重试业务工具 |
+| 确定性 LangGraph 最大递归步数 | 15 | 终止超限调度，请求按异常处理 |
+| 确定性流程单节点最大访问次数 | 4 | 写入 `error`，后续进入 Fallback |
 | 节点轨迹保留长度 | 24 | 只保留最近轨迹，控制 Checkpoint 大小 |
 | Python 调用 Java 工具超时 | 15 秒 | HTTP 异常写入 `error` 并进入 Fallback |
 | Mem0 连接/读取超时 | 2 秒 / 5 秒 | 仅降级记忆上下文，不中断业务 Agent |
 
-当前 Python 主链路没有对业务工具调用做自动重试。原因是查询与写操作共用工具边界，未经区分幂等性就统一重试会放大重复写风险。短暂的路由模型故障会直接降级为确定性关键词路由；RAG 和 Mem0 故障会降级为无额外上下文；业务工具故障则进入 Fallback。如后续增加重试，应只对已证明幂等的查询或携幂等键的写入开启。
+DeepSeek 模型层最多自动重试一次，但业务工具不自动重试。Deep Agent 整体异常时，服务使用同一份已验证请求状态重新进入确定性 LangGraph；RAG 或 Mem0 异常只移除相应上下文，不中断主业务。写操作从一开始就不进入 Deep Agent，因此不会因为查询规划重试而被重复执行。如后续为工具增加重试，应只对已证明幂等的查询或携幂等键的写入开启。
 
 ### 3.4 Agent 失败后如何恢复
 
@@ -547,7 +600,33 @@ async def _context(self, state: AgentState) -> dict[str, Any]:
 
 RAG 面向公共知识；Mem0 面向按 `tenant_user_id + session_id` 隔离的用户长期事实；Checkpoint 面向工作流状态；`chat_message` 面向完整聊天历史。实际代码中两次检索分别捕获异常，因此任意一个上下文源失败都不会阻断业务查询。
 
-### 6.3 条件抢占待确认动作
+### 6.3 创建 Harness 专用 Deep Agent
+
+文件：`python_assistant_service/app/deep_agent.py`
+
+~~~python
+register_harness_profile(
+    "deepseek",
+    HarnessProfile(
+        excluded_tools=(
+            "ls", "read_file", "write_file", "edit_file",
+            "glob", "grep", "execute",
+        ),
+        general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
+    ),
+)
+
+graph = create_deep_agent(
+    model=model,
+    tools=[],
+    system_prompt=system_prompt,
+    subagents=[detection_agent, resource_agent, report_agent, ops_agent],
+)
+~~~
+
+主 Agent 的业务工具列表为空，只保留 Deep Agents 提供的任务清单 `write_todos` 和子任务委派 `task`。文件读写、全文搜索、Shell 执行以及默认通用子 Agent 全部被禁用。四个专业子 Agent 分别只绑定检测、资源、报表或运维查询工具；工具闭包从经过校验的请求状态中固定取得企业、用户、会话、请求和幂等信息，模型不能自行伪造这些身份字段。
+
+### 6.4 条件抢占待确认动作
 
 ~~~java
 boolean claimed = chatSessionService.transitionPendingAction(
@@ -563,11 +642,11 @@ expectedStatus 条件使并发确认请求只有一个能够进入 EXECUTING。
 
 ## 7. 运行守卫
 
-- 最大执行轮数防止状态图无限运行。
-- 最大执行时间限制单次请求资源占用。
-- 单节点最大访问次数防止节点自循环。
-- 相同路由重复阈值防止 Router 与 SlotFilling 反复跳转。
-- 节点异常进入 Fallback，返回可理解的失败说明。
+- Deep Agent 最多迭代 40 次，DeepSeek 单次调用最长 60 秒并最多重试一次。
+- Deep Agent 不可用、模型异常或迭代超限时，整轮查询进入确定性 LangGraph。
+- 确定性流程限制 15 个递归步骤和单节点 4 次访问，防止节点自循环。
+- Python 调用 Java 工具最长等待 15 秒，业务工具不做不区分幂等性的自动重试。
+- RAG 与 Mem0 可独立降级；写操作始终经过人工确认和数据库条件状态抢占。
 
 ## 8. 本地语音输入与中文识别
 
@@ -715,6 +794,7 @@ segments, _ = model.transcribe(
 - SpeechTranscriptionServiceImplTest：文件校验、服务白名单、响应解析和异常处理。
 - test_asr_service.py：健康检查、格式处理、文件大小限制和临时文件清理。
 - python_assistant_service/tests/test_graph.py：Python 节点路由、上下文注入、降级、Checkpoint 过滤和异步记忆写入。
+- python_assistant_service/tests/test_deep_agent.py：验证主 Agent 工具白名单、四类子 Agent 工具隔离、企业与用户上下文固定传递、写意图旁路、上下文降级和异常回退。
 - python_assistant_service/tests/test_knowledge.py：本地 Markdown 分块与相关性检索。
 - python_assistant_service/tests/test_memory.py：Mem0 用户/会话作用域与敏感数据脱敏。
 
@@ -730,7 +810,7 @@ segments, _ = model.transcribe(
 
 ### 如何避免 Agent 死循环？
 
-状态图同时限制轮数、时间、节点访问次数和重复路由次数；超过阈值后进入 Fallback。
+Deep Agent 限制最大迭代次数和单次模型调用时间；确定性状态图限制递归步数与单节点访问次数。任一链路超过阈值都会终止当前执行并进入 Fallback，不会继续无限委派。
 
 ### 为什么语音识别结果不自动发送？
 

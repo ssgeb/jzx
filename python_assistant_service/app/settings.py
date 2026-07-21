@@ -21,7 +21,7 @@ def _as_csv(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Settings:
     service_name: str = "doorhandlecatch-python-assistant"
-    graph_version: str = "python-langgraph-v1"
+    graph_version: str = "python-deepagents-harness-v2"
     host: str = "127.0.0.1"
     port: int = 8090
     require_signature: bool = True
@@ -34,6 +34,10 @@ class Settings:
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
+    deep_agent_enabled: bool = True
+    deep_agent_max_iterations: int = 40
+    deep_agent_model_timeout_seconds: float = 60.0
+    deep_agent_model_max_retries: int = 1
     max_graph_iterations: int = 15
     max_trace_size: int = 24
     rag_enabled: bool = True
@@ -69,6 +73,10 @@ class Settings:
             deepseek_api_key=api_key,
             deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            deep_agent_enabled=_as_bool(os.getenv("ASSISTANT_DEEP_AGENT_ENABLED"), True),
+            deep_agent_max_iterations=int(os.getenv("ASSISTANT_DEEP_AGENT_MAX_ITERATIONS", "40")),
+            deep_agent_model_timeout_seconds=float(os.getenv("ASSISTANT_DEEP_AGENT_MODEL_TIMEOUT_SECONDS", "60")),
+            deep_agent_model_max_retries=int(os.getenv("ASSISTANT_DEEP_AGENT_MODEL_MAX_RETRIES", "1")),
             max_graph_iterations=int(os.getenv("ASSISTANT_MAX_GRAPH_ITERATIONS", "15")),
             max_trace_size=int(os.getenv("ASSISTANT_MAX_TRACE_SIZE", "24")),
             rag_enabled=_as_bool(os.getenv("ASSISTANT_RAG_ENABLED"), True),

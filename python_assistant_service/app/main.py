@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 from .clients import DeepSeekIntentModel, JavaToolClient
+from .deep_agent import HarnessDeepAgent
 from .graph import AgentGraph
 from .knowledge import LocalKnowledgeBase
 from .memory import MemoryServiceClient
@@ -33,14 +34,17 @@ def create_app(
     replay_guard = replay_guard or build_replay_guard(settings)
     owned_clients: list[object] = []
     knowledge = None
+    deep_agent = None
     if service is None:
         tool_client = JavaToolClient(settings)
         model = DeepSeekIntentModel(settings)
         memory = MemoryServiceClient(settings)
         knowledge = LocalKnowledgeBase(settings)
+        deep_agent = HarnessDeepAgent(settings, tool_client, knowledge, memory)
         service = AgentService(
             AgentGraph(settings, tool_client, model, knowledge, memory),
             memory,
+            deep_agent,
         )
         owned_clients.extend((tool_client, model, memory))
 
@@ -76,6 +80,7 @@ def create_app(
             signature_required=settings.require_signature,
             java_tools_configured=bool(settings.java_tool_base_url),
             model_configured=bool(settings.deepseek_enabled and settings.deepseek_api_key),
+            deep_agent_configured=bool(deep_agent is not None and deep_agent.available),
             rag_chunks=knowledge.chunk_count if knowledge is not None else 0,
             memory_configured=settings.memory_enabled and bool(settings.memory_service_url),
         )

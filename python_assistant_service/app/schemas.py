@@ -80,5 +80,6 @@ class HealthResponse(BaseModel):
     signature_required: bool
     java_tools_configured: bool
     model_configured: bool
+    deep_agent_configured: bool = False
     rag_chunks: int
     memory_configured: bool

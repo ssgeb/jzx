@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 COPY python_assistant_service/pyproject.toml /app/pyproject.toml

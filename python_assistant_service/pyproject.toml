@@ -5,11 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "doorhandlecatch-python-assistant"
 version = "0.1.0"
-description = "DoorHandleCatch LangGraph intelligent assistant service"
-requires-python = ">=3.10"
+description = "DoorHandleCatch Deep Agents Harness assistant service"
+requires-python = ">=3.11"
 dependencies = [
+  "deepagents==0.6.12",
   "fastapi==0.135.2",
   "httpx==0.28.1",
+  "langchain-deepseek==1.1.0",
   "langgraph==1.2.9",
   "pydantic>=2.12,<3",
   "redis==8.0.1",

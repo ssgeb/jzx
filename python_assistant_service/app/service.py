@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any, Protocol
 
 from .graph import AgentGraph
 from .schemas import AgentAction, AgentInvokeRequest, AgentResponse, AgentResumeRequest
 from .state import build_message_state, build_resume_state, persisted_snapshot
+
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryWriter(Protocol):
@@ -26,14 +30,35 @@ class NullMemoryWriter:
         return False
 
 
+class DeepAgentRunner(Protocol):
+    @property
+    def available(self) -> bool: ...
+
+    async def invoke(self, state: dict) -> dict | None: ...
+
+
 class AgentService:
-    def __init__(self, graph: AgentGraph, memory: MemoryWriter | None = None) -> None:
+    def __init__(
+        self,
+        graph: AgentGraph,
+        memory: MemoryWriter | None = None,
+        deep_agent: DeepAgentRunner | None = None,
+    ) -> None:
         self._graph = graph
         self._memory = memory or NullMemoryWriter()
+        self._deep_agent = deep_agent
         self._memory_tasks: set[asyncio.Task] = set()
 
     async def invoke(self, request: AgentInvokeRequest) -> AgentResponse:
-        state = await self._graph.invoke(build_message_state(request))
+        initial_state = build_message_state(request)
+        state = None
+        if self._deep_agent is not None and self._deep_agent.available:
+            try:
+                state = await self._deep_agent.invoke(initial_state)
+            except Exception:
+                logger.warning("Harness Deep Agent 执行失败，降级到确定性 LangGraph", exc_info=True)
+        if state is None:
+            state = await self._graph.invoke(initial_state)
         response = self._response(request.request_id, state)
         self._schedule_memory(state, response)
         return response
