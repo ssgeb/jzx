@@ -23,6 +23,10 @@ class AgentState(TypedDict, total=False):
     route_decision: dict[str, Any]
     intent: str
     data_context: dict[str, Any]
+    rag_context: str
+    user_memories: list[dict[str, Any]]
+    user_memory_context: str
+    context_degraded: list[str]
     result_content: str
     result_type: str
     action: dict[str, Any]
@@ -45,11 +49,16 @@ class AgentState(TypedDict, total=False):
     phase: str
 
 
-PERSISTED_STATE_KEYS = frozenset(AgentState.__annotations__) - {
+TRANSIENT_STATE_KEYS = {
     "request_id",
     "idempotency_key",
     "resume_action_id",
+    "rag_context",
+    "user_memories",
+    "user_memory_context",
+    "context_degraded",
 }
+PERSISTED_STATE_KEYS = frozenset(AgentState.__annotations__) - TRANSIENT_STATE_KEYS
 
 
 def _checkpoint_state(checkpoint: dict[str, Any]) -> AgentState:

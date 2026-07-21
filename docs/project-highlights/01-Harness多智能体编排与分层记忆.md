@@ -4,7 +4,7 @@
 
 ## 1. 本章目标
 
-本章独立讲解 Harness Agent 如何使用 StateGraph 将自然语言请求转换为可路由、可恢复、可确认的业务流程，以及 MySQL、Mem0、ChromaDB 分别承担什么记忆职责。
+本章独立讲解 Harness Agent 如何使用 Python LangGraph 将自然语言请求转换为可路由、可恢复、可确认的业务流程，以及 MySQL、Mem0 和本地 Markdown 知识库分别承担什么记忆职责。Java 编排实现仍作为可配置的兼容回退链路，不是 Python 模式下的主调度器。
 
 ### 1.1 术语翻译与作用
 
@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | Harness Agent | 智能体编排框架 | 组织多个业务智能体协同处理用户请求 |
 | Agent | 智能体 | 负责检测、资源、报表或运维等一种业务能力 |
-| StateGraph | 状态图 | 按节点和条件边控制智能体执行流程 |
+| LangGraph StateGraph | LangGraph 状态图 | Python 主链路按节点和条件边控制智能体流程 |
 | Checkpoint | 检查点 | 将会话执行状态持久化，支持中断后恢复 |
 | RouterNode | 路由节点 | 识别用户意图并选择目标智能体 |
 | SlotFillingNode | 槽位补全节点 | 发现缺失参数并继续向用户追问 |
@@ -21,8 +21,10 @@
 | FallbackNode | 降级处理节点 | 在异常或循环超限时生成可解释的兜底回答 |
 | RAG | 检索增强生成 | 从项目知识库检索资料后辅助模型回答 |
 | SSE | 服务器发送事件 | 后端持续向浏览器推送流式回答 |
-| Mem0 | 长期记忆组件 | 按用户保存偏好和跨会话历史信息 |
-| ChromaDB | 向量知识库 | 保存并检索项目公共知识 |
+| Mem0 | 长期记忆组件 | 按租户用户和会话作用域保存偏好与历史信息 |
+| Local Markdown RAG | 本地 Markdown 知识检索 | Python 服务对可信文档分块、检索并注入上下文 |
+| ChromaDB | 向量知识库 | 旧 Java RAG 链路支持的可选向量检索，当前 Python 主链路不依赖它 |
+| HMAC | 消息鉴别码 | 为 Python 调用 Java 内部工具的 HTTP 请求签名 |
 
 ## 2. 业务问题
 
@@ -44,7 +46,7 @@
 │  步骤一：装载三层上下文                                      │
 │                                                              │
 │  MySQL 检查点（Checkpoint）：恢复会话状态与最近消息          │
-│  ChromaDB 检索增强生成（RAG）：检索项目知识                  │
+│  Python 本地 RAG：检索项目 Markdown 公共知识            │
 │  Mem0 长期记忆：补充当前用户的偏好与历史信息                 │
 └──────────────────────────┬───────────────────────────────────┘
                            │
@@ -93,7 +95,7 @@
 
 #### 3.1.1 核心结论
 
-项目中的多个 Agent 不通过 Kafka、RPC 或 HTTP 互相发送消息，也不会彼此自由对话。系统采用“中心路由 + 共享状态”的黑板模式：`RouterNode` 负责决定下一步由谁执行，所有节点通过同一个 `AgentState` 读取输入、补充信息并写回结果，`StateGraph` 根据状态中的意图和阶段选择下一节点。
+项目中的多个 Agent 不通过 Kafka、RPC 或 HTTP 互相发送消息，也不会彼此自由对话。系统采用“中心路由 + 共享状态”的黑板模式：Python `router` 节点负责决定下一步由谁执行，所有节点通过同一个 `AgentState` 读取输入、补充信息并写回结果，LangGraph 根据状态中的意图和阶段选择下一节点。只有跨语言边界使用 HTTP：Python 专业 Agent 通过 HMAC 签名的固定内部接口调用 Java 业务能力。
 
 | 英文术语 | 中文名称 | 项目中的含义 |
 | --- | --- | --- |
@@ -111,11 +113,11 @@
         │
         ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  步骤一：编排服务创建 AgentState                             │
+│  步骤一：Java 恢复会话，Python 创建 AgentState             │
 │                                                              │
 │  写入用户输入、用户身份、会话编号和页面上下文                │
 │  恢复最近消息、会话摘要、已收集槽位和中间结果                │
-│  注入 ChromaDB 公共知识和 Mem0 用户长期记忆                  │
+│  context 节点注入本地 RAG 公共知识和 Mem0 用户记忆       │
 └──────────────────────────┬───────────────────────────────────┘
                            │ 同一个 AgentState
                            ▼
@@ -175,7 +177,8 @@
 | `thread_id` | 会话编号 | 编排服务 | 检查点、确认节点 |
 | `recent_msgs` | 最近多轮消息 | 上下文恢复逻辑 | 路由节点、专业 Agent |
 | `summary` | 会话摘要 | 上下文构建器 | 路由节点 |
-| `rag_context` | 公共知识检索结果 | 编排服务 | 各专业 Agent |
+| `rag_context` | 公共知识检索结果 | Python context 节点 | 各专业 Agent |
+| `user_memories` | 按用户与会话检索的长期记忆 | Python context 节点 | 路由节点、各专业 Agent |
 | `route_decision` | 路由决定 | RouterNode | StateGraph、确认节点 |
 | `intent` | 查询或修改意图 | RouterNode | 条件边、专业 Agent |
 | `slots` | 已收集业务参数 | 路由节点、槽位节点 | 后续专业 Agent |
@@ -187,7 +190,7 @@
 | `result_type` | 文本、业务卡片等结果类型 | 专业 Agent | 编排服务、前端 |
 | `error` | 节点执行异常 | 状态图执行器 | FallbackNode |
 
-`AgentState` 为每次请求单独创建。虽然内部使用 `ConcurrentHashMap` 为将来的并行节点预留线程安全基础，但当前 `CompiledGraph` 仍按循环逐个执行节点，因此现阶段是顺序编排，不是多个 Agent 同时讨论。
+`AgentState` 为每次请求单独创建，Python 中以 `TypedDict` 定义状态契约。当前 LangGraph 按条件边顺序调度节点，因此现阶段是可追踪的顺序编排，不是多个 Agent 同时讨论。`rag_context`、`user_memories` 等上下文是本轮临时数据，不写入 Checkpoint，避免过期知识和敏感记忆在后续请求中重放。
 
 #### 3.1.4 三种典型沟通链路
 
@@ -195,9 +198,10 @@
 
 ~~~text
 “查询 TASK-1001 的检测结果”
-  → RouterNode 写入 DETECTION_QUERY
-  → StateGraph 选择 DetectionAgentNode
-  → DetectionAgentNode 查询任务并写回 result_content
+  → context 节点检索 RAG 与 Mem0
+  → router 写入 DETECTION_QUERY
+  → LangGraph 选择 detection_agent
+  → detection_agent 调用 Java 受限工具并写回 result_content
   → 编排服务将结果保存并返回前端
 ~~~
 
@@ -228,7 +232,7 @@
 
 - MySQL `Checkpoint` 保存可序列化的 `AgentState`，用于跨请求、应用重启和人工确认后的恢复。
 - `chat_message` 保存用户可见的完整聊天历史，它与机器执行状态不是同一类数据。
-- ChromaDB 提供项目公共知识，Mem0 提供按用户隔离的长期记忆，两者作为上下文注入，不承担 Agent 节点调度。
+- Python 本地 Markdown RAG 提供项目公共知识，Mem0 提供按用户和会话隔离的长期记忆，两者作为上下文注入，不承担 Agent 节点调度。RAG 或 Mem0 不可用时仅标记上下文降级，业务查询仍可继续。
 - SSE 流式消费者只在当前 HTTP 请求中有效，被标记为临时字段，不会写入 Checkpoint。
 - Kafka 只用于 Spring Boot 与 Python 推理 Worker 之间的检测任务消息，不参与 Java 内部 Agent 通信。
 
@@ -246,13 +250,13 @@
 
 #### 3.2.1 项目中的“主 Agent”是什么
 
-本项目没有实现一个可以自由思考、再和多个子 Agent 讨论的 Supervisor 大模型。这里所说的“主 Agent”是逻辑上的编排层，由三个组件共同承担：
+本项目没有实现一个可以自由思考、再和多个子 Agent 讨论的 Supervisor 大模型。这里所说的“主 Agent”是逻辑上的编排层，由 Java 边界层与 Python 调度层共同承担：
 
 | 组件 | 主 Agent 职责 |
 | --- | --- |
-| `AgentOrchestratorServiceImpl` | 校验用户和会话、恢复上下文、注入 RAG 与 Mem0、启动状态图、保存最终消息 |
-| `CompiledGraph` | 按节点和条件边执行、保存检查点、执行重试、运行守卫和异常降级 |
-| `RouterNode` | 识别意图、目标 Agent、已有槽位和是否属于修改操作 |
+| Java `AgentOrchestratorServiceImpl` | 校验租户、用户和会话，恢复 MySQL Checkpoint，调用 Python 并保存最终消息 |
+| Python `AgentGraph` | 装载 RAG 与 Mem0 上下文，按 LangGraph 节点和条件边执行，进入回答或降级节点 |
+| Python `router` | 识别意图、目标 Agent、已有槽位和是否属于修改操作 |
 
 检测、资源、报表和运维节点是专业子 Agent。子 Agent 只处理自己负责的业务，不负责决定整张图的执行顺序，也不能绕过编排层直接调度另一个子 Agent。
 
@@ -265,18 +269,18 @@
         │
         ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  逻辑主 Agent：AgentOrchestratorServiceImpl                  │
+│  Java 边界层：AgentOrchestratorServiceImpl                  │
 │                                                              │
 │  校验租户和会话 → 限流 → 恢复 Checkpoint                   │
-│  注入最近消息、RAG 公共知识和 Mem0 用户记忆                 │
-│  创建本轮唯一的 AgentState                                  │
+│  组装请求、恢复允许跨轮保留的 AgentState 字段              │
+│  调用已签名的 Python 内部编排接口                         │
 └──────────────────────────┬───────────────────────────────────┘
                            │ 共享 AgentState
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  主 Agent 调度内核：CompiledGraph + RouterNode              │
+│  Python 主 Agent 调度内核：LangGraph + router               │
 │                                                              │
-│  写入 intent、targetAgent、slots、currentNode                │
+│  context 注入 RAG/Mem0，写入 intent、targetAgent、slots    │
 │  通过条件边选择一个专业子 Agent                              │
 └──────────────────────────┬───────────────────────────────────┘
                            │
@@ -302,12 +306,12 @@
 
 1. 编排服务从登录态构建 `TenantContext`，校验会话属于当前用户。
 2. 编排服务从 MySQL Checkpoint 选择性恢复允许跨轮保留的字段，再注入本轮输入。
-3. `RouterNode` 把路由决定写入 `AgentState`，自己不直接执行检测、资源或报表业务。
-4. `CompiledGraph` 根据 `intent`、会话阶段和确认状态选择控制节点或一个专业子 Agent。
-5. 子 Agent 调用受限的业务 Service，把结构化结果写回 `AgentState`，不直接向前端返回。
+3. Python `context` 节点检索本地 RAG 和 Mem0，`router` 再把路由决定写入 `AgentState`。
+4. LangGraph 根据 `intent`、会话阶段和确认状态选择控制节点或一个专业子 Agent。
+5. 子 Agent 通过 HMAC 签名 HTTP 调用 Java 受限业务工具，把结构化结果写回 `AgentState`，不直接向前端返回。
 6. 回答节点和编排服务统一保存结果，通过普通 HTTP 或 SSE 输出。
 
-当前 `CompiledGraph` 顺序执行节点。`AgentState` 使用线程安全 Map 是为了保证状态容器的可扩展性，不表示四个专业子 Agent 会在当前版本中同时并行执行。
+当前 Python LangGraph 顺序执行节点。`AgentState` 是节点间的状态契约，不表示四个专业子 Agent 会在当前版本中同时并行执行。
 
 ### 3.3 如何保证 Agent 执行流程安全
 
@@ -319,19 +323,20 @@
 | 状态传播 | `tenant_user_id` 写入 `AgentState`，缺失时 `requireTenantContext()` 直接失败 | 防止节点脱离真实身份执行 |
 | 参数完整性 | Slot Filling 收集任务号、工单号等必需参数 | 防止基于不完整参数调用业务服务 |
 | 高风险操作 | 修改意图必须经过 `HumanConfirmNode`，先预览、再确认 | 防止模型直接执行返工、放行、报废等操作 |
-| 运行边界 | 轮数、耗时、节点访问次数和重复路由守卫 | 防止死循环和资源无限占用 |
+| 运行边界 | LangGraph 递归上限、节点访问次数和外部调用超时 | 防止死循环和资源无限占用 |
+| 跨语言边界 | HMAC 签名、时间窗、防重放和幂等键 | 防止内部工具被伪造请求或重复执行 |
 
 ~~~text
 用户请求
     │
     ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Step 1：身份与会话校验                                     │
+│  步骤一：身份与会话校验                                    │
 │  requireTenant + verifySessionOwner + 每用户请求限流         │
 └──────────────────────────┬───────────────────────────────────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Step 2：路由与参数校验                                     │
+│  步骤二：路由与参数校验                                    │
 │  参数不完整 → 只追问，不调用专业子 Agent                    │
 └──────────────────────────┬───────────────────────────────────┘
                            ▼
@@ -348,8 +353,8 @@
                      └─────┬─────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Step 3：运行守卫                                           │
-│  轮数、时间、节点访问和重复路由任一超限 → Fallback          │
+│  步骤三：运行守卫                                          │
+│  状态图步数或节点访问超限、节点异常 → Fallback       │
 └──────────────────────────┬───────────────────────────────────┘
                            ▼
              保存 Checkpoint、审计状态并返回结果
@@ -376,14 +381,13 @@ PENDING ───────用户取消────────> CANCELLED
 
 | 守卫 | 当前默认值 | 触发后的处理 |
 | --- | ---: | --- |
-| 最大状态图轮数 | 15 | 设置 `MAX_ITERATIONS` 并进入 Fallback |
-| 单轮最大执行时间 | 15000 ms | 设置 `GUARD_BREAK` 并进入 Fallback |
-| 单节点最大访问次数 | 4 | 保护性中断，记录触发节点 |
-| 同一路由最大连续重复次数 | 3 | 保护性中断，记录重复路由 |
-| 节点与路由轨迹保留长度 | 24 | 只保留最近轨迹，控制 Checkpoint 大小 |
-| Router 节点重试配置 | 声明 2 次 | 执行器提供 500 ms、1000 ms 指数退避代码路径，但尚缺专门的重试映射回归测试 |
+| LangGraph 最大递归步数 | 15 | LangGraph 终止超限调度，请求按异常处理 |
+| 单节点最大访问次数 | 4 | 写入 `error`，后续进入 Fallback |
+| 节点轨迹保留长度 | 24 | 只保留最近轨迹，控制 Checkpoint 大小 |
+| Python 调用 Java 工具超时 | 15 秒 | HTTP 异常写入 `error` 并进入 Fallback |
+| Mem0 连接/读取超时 | 2 秒 / 5 秒 | 仅降级记忆上下文，不中断业务 Agent |
 
-重试能力由状态图按节点配置。当前只对 `RouterNode` 声明了两次重试，其他专业子 Agent 默认不重试；而且现有测试只覆盖运行守卫，没有单独验证 `current_node` 与重试配置的映射，因此本项目不能把“Router 一定重试两次”作为已经验收的强保证。运行时间也是在节点切换边界检查，无法强制中断一个已经阻塞在外部调用中的节点。
+当前 Python 主链路没有对业务工具调用做自动重试。原因是查询与写操作共用工具边界，未经区分幂等性就统一重试会放大重复写风险。短暂的路由模型故障会直接降级为确定性关键词路由；RAG 和 Mem0 故障会降级为无额外上下文；业务工具故障则进入 Fallback。如后续增加重试，应只对已证明幂等的查询或携幂等键的写入开启。
 
 ### 3.4 Agent 失败后如何恢复
 
@@ -393,26 +397,17 @@ PENDING ───────用户取消────────> CANCELLED
 节点开始执行
     │
     ▼
-执行成功？──────────────是──────────────> 保存 Checkpoint → 下一节点
+执行成功？──────────────是──────────────> 写回 AgentState → 下一节点
     │
     否
     ▼
-该节点配置了重试？
-    │
- ┌──┴──┐
- │     │
-是     否
- │     │
- ▼     │
-指数退避重试
- │     │
-仍失败 ┘
-    │
-    ▼
+捕获异常并写入 error
+    │
+    ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  写入 error 与 exitReason                                   │
 │  执行 Fallback，返回“不基于不完整信息编造结果”的说明       │
-│  保存最终 Checkpoint 和节点/路由轨迹                        │
+│  Python 返回安全快照，Java 保存 Checkpoint 和轨迹           │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                   用户稍后重新发起请求
@@ -423,9 +418,10 @@ PENDING ───────用户取消────────> CANCELLED
 
 | 失败场景 | 当前处理 | 恢复方式 |
 | --- | --- | --- |
-| 配置为可重试的节点发生短暂异常 | 执行器设计为指数退避后再次执行；Router 声明最多 2 次 | 重试路径需要补充专门回归测试后才能作为强保证 |
+| 路由模型暂时不可用 | 降级为确定性关键词路由 | 无需重试即可继续编排 |
+| RAG 或 Mem0 暂时不可用 | 记录 `context_degraded` 并使用空上下文 | 业务 Agent 继续执行，Mem0 写入也不阻塞主响应 |
 | 节点最终执行失败 | 写入错误，进入 Fallback，保存检查点 | 用户补充信息或重新发起请求 |
-| 死循环或超时 | 运行守卫设置 `GUARD_BREAK` | Fallback 给出原因，避免继续消耗资源 |
+| 状态图递归或节点访问超限 | LangGraph 或节点守卫终止路径 | 返回异常或 Fallback，避免继续消耗资源 |
 | 等待人工确认 | 保存当前节点、状态和待确认动作后暂停 | 用户确认后执行 `resume(tenant, sessionId, confirmed=true)` |
 | 应用实例重启 | 状态保存在 MySQL `state_json` | 新实例按租户和会话加载 Checkpoint |
 | 确认后的业务执行失败 | 动作从 `EXECUTING` 更新为 `FAILED` 并记录错误摘要 | 用户查看失败信息后重新发起，避免把失败伪装成成功 |
@@ -448,29 +444,30 @@ state.setAll(Map.of(AgentState.KEY_CONFIRMED, true));
 
 #### 3.4.4 当前恢复能力边界
 
-- Checkpoint 在每个节点执行后保存，异常、守卫中断和等待确认时也会尝试保存。
+- Python 在单次内部请求中完成节点调度，并把过滤掉临时字段的快照返回 Java；Java 在本轮结束或等待确认时保存 Checkpoint，并非对每个 Python 节点做跨进程持久化。
 - Checkpoint 保存失败时当前实现记录警告，不会回滚已经完成的外部业务调用，因此不能宣传为“任意故障都能无损恢复”。
 - 项目没有通用的跨 Agent 分布式事务和自动补偿框架。业务修改是否回滚仍由具体 Service 的事务边界决定。
 - 普通对话恢复失败可以降级为新状态；高风险确认恢复失败则采用失败关闭，不会猜测原动作继续执行。
 - 当前主要恢复粒度是“会话状态图和人工确认动作”，不是对任意节点进行指令级断点续跑。
-- 当前测试已覆盖循环守卫、轨迹记录、Checkpoint 和确认恢复，但尚缺“指定节点按配置次数重试”的独立回归测试。
+- 当前测试已覆盖轨迹、Checkpoint 过滤、确认恢复、RAG/Mem0 降级与租户用户隔离；业务工具自动重试尚未开启。
 
-## 4. StateGraph 状态设计
+## 4. LangGraph 状态设计
 
 AgentState 是节点之间传递的统一状态容器。核心状态包括：
 
 | 状态 | 含义 |
 | --- | --- |
-| sessionId / username | 会话与用户上下文 |
-| recentMessages | 最近多轮消息 |
-| collectedSlots | 已收集业务参数 |
-| missingSlots | 尚缺少的参数 |
-| intent / targetAgent | 意图和目标智能体 |
-| conversationPhase | 收集参数、执行、等待确认等阶段 |
-| pendingActionId | 待确认动作编号 |
-| currentNode / exitReason | 当前节点与退出原因 |
-| ragContext | 公共知识检索结果 |
+| `thread_id` / `username` / `tenant_user_id` | 会话、用户与租户用户上下文 |
+| `recent_msgs` | 最近多轮消息 |
+| `slots` | 已收集业务参数 |
+| `missing_slots` | 尚缺少的参数 |
+| `intent` / `route_decision.targetAgent` | 意图和目标智能体 |
+| `phase` | 收集参数、执行、等待确认等阶段 |
+| `pending_action_id` | 待确认动作编号 |
+| `current_node` / `exit_reason` | 当前节点与退出原因 |
+| `rag_context` | 公共知识检索结果，仅在本轮内使用 |
 | user_memories | 用户长期记忆 |
+| `context_degraded` | RAG 或 Mem0 不可用时的降级标记 |
 
 ## 5. 数据库存储
 
@@ -512,36 +509,43 @@ stateDiagram-v2
 
 ## 6. 核心代码
 
-### 6.1 恢复上下文
+### 6.1 恢复上下文并覆盖当前身份
 
-文件：src/main/java/com/ruanzhu/doorhandlecatch/service/impl/AgentOrchestratorServiceImpl.java
+文件：`python_assistant_service/app/state.py`
 
-~~~java
-AgentState state = AgentState.create(
-        sessionId, request.getContent(), username);
-AgentState previous = checkpointer.load(sessionId);
-if (previous != null) {
-    for (String key : CONTEXT_KEYS) {
-        Object value = previous.get(key, Object.class);
-        if (value != null) {
-            state.set(key, value);
-        }
-    }
-}
+~~~python
+state = _checkpoint_state(request.checkpoint)
+state.update(
+    thread_id=request.session_id,
+    user_input=request.content,
+    username=request.username,
+    tenant_user_id=request.tenant_user_id,
+    request_id=request.request_id,
+    idempotency_key=request.idempotency_key,
+)
 ~~~
 
-代码创建本轮新状态，只恢复允许跨轮保留的字段，避免上一轮临时结果污染本轮执行。
+代码先过滤 Java 传入的 Checkpoint，再用当前已验证请求中的会话和身份覆盖历史值。`request_id`、幂等键、RAG 与 Mem0 上下文都是临时字段，不写回 Checkpoint。
 
 ### 6.2 注入知识与记忆
 
-~~~java
-String ragContext =
-        ragKnowledgeService.retrieveContext(request.getContent());
-List<Map<String, Object>> memories =
-        mem0Client.searchMemories(username, request.getContent(), 5);
+~~~python
+async def _context(self, state: AgentState) -> dict[str, Any]:
+    rag_context = await self._knowledge.retrieve(state["user_input"])
+    memories = await self._memory.search(
+        state["tenant_user_id"],
+        state["thread_id"],
+        state["user_input"],
+        self._settings.memory_top_k,
+    )
+    return {
+        "rag_context": rag_context,
+        "user_memories": memories,
+        "user_memory_context": format_memories(memories),
+    }
 ~~~
 
-RAG 面向公共知识；Mem0 面向用户长期事实；Checkpoint 面向工作流状态；chat_message 面向完整聊天历史。
+RAG 面向公共知识；Mem0 面向按 `tenant_user_id + session_id` 隔离的用户长期事实；Checkpoint 面向工作流状态；`chat_message` 面向完整聊天历史。实际代码中两次检索分别捕获异常，因此任意一个上下文源失败都不会阻断业务查询。
 
 ### 6.3 条件抢占待确认动作
 
@@ -710,6 +714,9 @@ segments, _ = model.transcribe(
 - chat-voice-input-contract.test.cjs：录音状态、格式选择、最长时长和识别结果回填。
 - SpeechTranscriptionServiceImplTest：文件校验、服务白名单、响应解析和异常处理。
 - test_asr_service.py：健康检查、格式处理、文件大小限制和临时文件清理。
+- python_assistant_service/tests/test_graph.py：Python 节点路由、上下文注入、降级、Checkpoint 过滤和异步记忆写入。
+- python_assistant_service/tests/test_knowledge.py：本地 Markdown 分块与相关性检索。
+- python_assistant_service/tests/test_memory.py：Mem0 用户/会话作用域与敏感数据脱敏。
 
 ## 10. 面试问答
 

@@ -56,7 +56,7 @@ def test_detection_query_runs_specialist_quality_gate_and_responder(fixture):
     assert response.exit_reason == "COMPLETE"
     assert response.intent == "DETECTION_QUERY"
     assert response.content == "DETECTION query 执行完成"
-    assert response.trace == ["router", "detection_agent", "quality_gate", "responder"]
+    assert response.trace == ["context", "router", "detection_agent", "quality_gate", "responder"]
     assert tools.calls[0][0:2] == ("DETECTION", "query")
 
 
@@ -159,3 +159,68 @@ def test_resume_rejects_action_id_that_does_not_match_checkpoint(fixture):
 
     assert response.exit_reason == "ERROR"
     assert tools.calls == []
+
+
+class FixedKnowledge:
+    async def retrieve(self, query):
+        return "[系统知识库检索结果]\n设备离线时应检查网络。"
+
+
+class RecordingMemory:
+    def __init__(self):
+        self.search_calls = []
+        self.add_calls = []
+
+    async def search(self, tenant_user_id, session_id, query, top_k=None):
+        self.search_calls.append((tenant_user_id, session_id, query, top_k))
+        return [{"id": "m1", "memory": "用户偏好查看设备编号", "score": 0.9}]
+
+    async def add(self, tenant_user_id, session_id, content, metadata=None):
+        self.add_calls.append((tenant_user_id, session_id, content, metadata))
+        return True
+
+
+def test_context_node_injects_rag_and_scoped_memory_without_persisting_them():
+    tools = RecordingTools()
+    memory = RecordingMemory()
+    settings = Settings(require_signature=False)
+    service = AgentService(
+        AgentGraph(settings, tools, NoModel(), FixedKnowledge(), memory),
+        memory,
+    )
+
+    async def scenario():
+        response = await service.invoke(message_request("查询设备在线状态"))
+        await service.shutdown()
+        return response
+
+    response = asyncio.run(scenario())
+
+    assert memory.search_calls == [(42, "sess-42", "查询设备在线状态", 5)]
+    prompt = tools.calls[0][2]["prompt"]
+    assert "设备离线时应检查网络" in prompt
+    assert "用户偏好查看设备编号" in prompt
+    assert "rag_context" not in response.checkpoint
+    assert "user_memories" not in response.checkpoint
+    assert memory.add_calls[0][0:2] == (42, "sess-42")
+    assert "用户: 查询设备在线状态" in memory.add_calls[0][2]
+
+
+class BrokenContext:
+    async def retrieve(self, query):
+        raise RuntimeError("rag unavailable")
+
+    async def search(self, tenant_user_id, session_id, query, top_k=None):
+        raise RuntimeError("memory unavailable")
+
+
+def test_context_dependencies_degrade_without_failing_business_query():
+    tools = RecordingTools()
+    settings = Settings(require_signature=False)
+    broken = BrokenContext()
+    service = AgentService(AgentGraph(settings, tools, NoModel(), broken, broken))
+
+    response = asyncio.run(service.invoke(message_request("查询检测任务")))
+
+    assert response.exit_reason == "COMPLETE"
+    assert response.content == "DETECTION query 执行完成"

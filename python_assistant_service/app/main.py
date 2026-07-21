@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 from .clients import DeepSeekIntentModel, JavaToolClient
 from .graph import AgentGraph
+from .knowledge import LocalKnowledgeBase
+from .memory import MemoryServiceClient
 from .schemas import AgentInvokeRequest, AgentResponse, AgentResumeRequest, HealthResponse
 from .security import ReplayGuard, build_replay_guard, verify_internal_request
 from .service import AgentService
@@ -28,10 +31,29 @@ def create_app(
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     replay_guard = replay_guard or build_replay_guard(settings)
+    owned_clients: list[object] = []
+    knowledge = None
     if service is None:
         tool_client = JavaToolClient(settings)
         model = DeepSeekIntentModel(settings)
-        service = AgentService(AgentGraph(settings, tool_client, model))
+        memory = MemoryServiceClient(settings)
+        knowledge = LocalKnowledgeBase(settings)
+        service = AgentService(
+            AgentGraph(settings, tool_client, model, knowledge, memory),
+            memory,
+        )
+        owned_clients.extend((tool_client, model, memory))
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        yield
+        shutdown = getattr(service, "shutdown", None)
+        if shutdown is not None:
+            await shutdown()
+        for client in owned_clients:
+            close = getattr(client, "aclose", None)
+            if close is not None:
+                await close()
 
     app = FastAPI(
         title="DoorHandleCatch Python 智能体服务",
@@ -39,6 +61,7 @@ def create_app(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     async def require_signature(request: Request) -> None:
@@ -53,6 +76,8 @@ def create_app(
             signature_required=settings.require_signature,
             java_tools_configured=bool(settings.java_tool_base_url),
             model_configured=bool(settings.deepseek_enabled and settings.deepseek_api_key),
+            rag_chunks=knowledge.chunk_count if knowledge is not None else 0,
+            memory_configured=settings.memory_enabled and bool(settings.memory_service_url),
         )
 
     @app.post(

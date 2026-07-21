@@ -29,6 +29,7 @@ class JavaToolClient:
         self._client = client or httpx.AsyncClient(
             timeout=settings.java_tool_timeout_seconds
         )
+        self._owns_client = client is None
 
     async def execute(
         self,
@@ -74,6 +75,10 @@ class JavaToolClient:
             return {"content": str(result)}
         return result
 
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self._client.aclose()
+
 
 class IntentModel(Protocol):
     async def classify(self, content: str, context: dict[str, Any]) -> dict[str, Any] | None: ...
@@ -83,6 +88,7 @@ class DeepSeekIntentModel:
     def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None) -> None:
         self._settings = settings
         self._client = client or httpx.AsyncClient(timeout=20.0)
+        self._owns_client = client is None
 
     async def classify(self, content: str, context: dict[str, Any]) -> dict[str, Any] | None:
         if not (
@@ -111,3 +117,7 @@ class DeepSeekIntentModel:
         raw = response.json()["choices"][0]["message"]["content"]
         parsed = json.loads(raw)
         return parsed if isinstance(parsed, dict) else None
+
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self._client.aclose()

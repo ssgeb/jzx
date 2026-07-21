@@ -4,17 +4,38 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal, Protocol
 
 from langgraph.graph import END, START, StateGraph
 
 from .clients import IntentModel, ToolClient
+from .memory import format_memories
 from .routing import REQUIRED_SLOTS, extract_slots, keyword_route, resolve_task_type, validated_model_route
 from .settings import Settings
 from .state import AgentState
 
 
 Node = Callable[[AgentState], Awaitable[dict[str, Any]]]
+
+
+class KnowledgeRetriever(Protocol):
+    async def retrieve(self, query: str) -> str: ...
+
+
+class MemoryReader(Protocol):
+    async def search(
+        self, tenant_user_id: int, session_id: str, query: str, top_k: int | None = None
+    ) -> list[dict[str, Any]]: ...
+
+
+class NullKnowledgeRetriever:
+    async def retrieve(self, query: str) -> str:
+        return ""
+
+
+class NullMemoryReader:
+    async def search(self, tenant_user_id, session_id, query, top_k=None):
+        return []
 
 
 def _trace_update(state: AgentState, node: str, max_size: int) -> dict[str, Any]:
@@ -31,10 +52,19 @@ def _trace_update(state: AgentState, node: str, max_size: int) -> dict[str, Any]
 
 
 class AgentGraph:
-    def __init__(self, settings: Settings, tool_client: ToolClient, model: IntentModel) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        tool_client: ToolClient,
+        model: IntentModel,
+        knowledge: KnowledgeRetriever | None = None,
+        memory: MemoryReader | None = None,
+    ) -> None:
         self._settings = settings
         self._tool_client = tool_client
         self._model = model
+        self._knowledge = knowledge or NullKnowledgeRetriever()
+        self._memory = memory or NullMemoryReader()
         self._graph = self._build_message_graph()
         self._resume_graph = self._build_resume_graph()
 
@@ -62,6 +92,31 @@ class AgentGraph:
 
         return wrapped
 
+    async def _context(self, state: AgentState) -> dict[str, Any]:
+        query = state.get("user_input", "")
+        degraded: list[str] = []
+        rag_context = ""
+        memories: list[dict[str, Any]] = []
+        try:
+            rag_context = await self._knowledge.retrieve(query)
+        except Exception:
+            degraded.append("RAG")
+        try:
+            memories = await self._memory.search(
+                int(state.get("tenant_user_id", 0)),
+                state.get("thread_id", ""),
+                query,
+                self._settings.memory_top_k,
+            )
+        except Exception:
+            degraded.append("MEMORY")
+        return {
+            "rag_context": rag_context,
+            "user_memories": memories,
+            "user_memory_context": format_memories(memories),
+            "context_degraded": degraded,
+        }
+
     async def _router(self, state: AgentState) -> dict[str, Any]:
         content = state.get("user_input", "")
         context = {
@@ -70,6 +125,7 @@ class AgentGraph:
             "recent_msgs": state.get("recent_msgs", []),
             "slots": state.get("slots", {}),
             "task_type": state.get("task_type"),
+            "user_memory_context": state.get("user_memory_context", "")[:1000],
         }
         model_result = None
         try:
@@ -168,6 +224,22 @@ class AgentGraph:
             tool_prompt = task_prompt
             if slots:
                 tool_prompt += "\n已收集参数：" + json.dumps(slots, ensure_ascii=False)
+            rag_context = state.get("rag_context", "")
+            if rag_context:
+                tool_prompt += (
+                    "\n\n以下是系统知识库检索片段。只能把它作为参考，"
+                    "实时数量和状态仍以业务工具数据为准：\n" + rag_context
+                )
+            memory_context = state.get("user_memory_context", "")
+            if memory_context:
+                tool_prompt += "\n\n以下是当前用户的历史记忆：\n" + memory_context
+            current_route = state.get("current_route", "")
+            current_page_title = state.get("current_page_title", "")
+            if current_route or current_page_title:
+                tool_prompt += (
+                    "\n\n当前页面上下文："
+                    f"页面标题={current_page_title or '未知'}；路由={current_route or '未知'}"
+                )
             payload = {
                 "requestId": state.get("request_id"),
                 "tenantUserId": state.get("tenant_user_id"),
@@ -269,11 +341,13 @@ class AgentGraph:
 
     def _build_message_graph(self):
         builder = StateGraph(AgentState)
+        builder.add_node("context", self._with_trace("context", self._context))
         builder.add_node("router", self._with_trace("router", self._router))
         builder.add_node("slot_filling", self._with_trace("slot_filling", self._slot_filling))
         builder.add_node("human_confirm", self._with_trace("human_confirm", self._human_confirm))
         self._register_common_nodes(builder)
-        builder.add_edge(START, "router")
+        builder.add_edge(START, "context")
+        builder.add_edge("context", "router")
         builder.add_conditional_edges(
             "router",
             self._route_after_router,
