@@ -118,8 +118,11 @@ python_assistant_service/
 │   ├── schemas/          # Pydantic 请求/响应模型
 │   ├── settings.py
 │   └── main.py
-├── config/
-│   └── subagents.yaml    # 子智能体职责、Skills 和工具声明
+├── config/subagents/     # 一个子智能体一个 YAML
+│   ├── detection-specialist.yaml
+│   ├── resource-specialist.yaml
+│   ├── report-specialist.yaml
+│   └── ops-specialist.yaml
 ├── tests/
 ├── pyproject.toml
 ├── requirements.lock

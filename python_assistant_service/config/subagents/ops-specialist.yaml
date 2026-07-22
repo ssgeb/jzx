@@ -1,0 +1,28 @@
+version: 1
+
+skills:
+  diagnose-platform-operations:
+    description: 查询系统运行状态、业务入口和故障定位信息。
+    instructions:
+      - 按服务状态、消息链路、存储和页面入口组织排查结论。
+      - 只返回诊断与导航建议，不执行命令、不修改配置。
+
+tools:
+  query_ops:
+    target_agent: OPS
+    operation: query
+    description: 查询平台运行状态、业务导航和故障诊断信息。
+
+subagent:
+  id: OPS
+  name: ops-specialist
+  enabled: true
+  description: 运维诊断与业务导航专家
+  responsibilities:
+    - 负责服务状态、消息链路、页面入口、操作流程和故障定位信息查询。
+    - 提供可执行的人工排查步骤，并标明无法从工具确认的信息。
+    - 不执行 Shell、不修改配置、不重启服务。
+  skills:
+    - diagnose-platform-operations
+  tools:
+    - query_ops

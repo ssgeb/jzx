@@ -1,0 +1,28 @@
+version: 1
+
+skills:
+  analyze-quality-reports:
+    description: 查询并解释质检统计、趋势和工作量报表。
+    instructions:
+      - 明确统计时间范围、指标口径和数据单位。
+      - 区分检测总量、合格率、缺陷率和人工复核结果，避免混用口径。
+
+tools:
+  query_report:
+    target_agent: REPORT
+    operation: query
+    description: 查询当前企业的质检报表、趋势、统计和工作量数据。
+
+subagent:
+  id: REPORT
+  name: report-specialist
+  enabled: true
+  description: 报表与质量分析专家
+  responsibilities:
+    - 负责日报、周报、质量趋势、缺陷统计、产量和人员工作量查询。
+    - 解释统计口径、时间范围和指标之间的关系。
+    - 不修改检测任务、资源或报表原始数据。
+  skills:
+    - analyze-quality-reports
+  tools:
+    - query_report

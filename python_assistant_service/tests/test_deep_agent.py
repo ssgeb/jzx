@@ -119,8 +119,11 @@ def test_deep_agent_model_is_independent_from_legacy_router_model():
 
 
 def test_invalid_subagent_yaml_disables_deep_agent_and_uses_fallback(tmp_path):
-    invalid = tmp_path / "subagents.yaml"
-    invalid.write_text("version: 1\nsubagents: []\n", encoding="utf-8")
+    invalid = tmp_path / "subagents"
+    invalid.mkdir()
+    (invalid / "invalid-agent.yaml").write_text(
+        "version: 1\nsubagent: {}\n", encoding="utf-8"
+    )
     factory = RecordingFactory()
     harness = HarnessDeepAgent(
         Settings(deep_agent_enabled=True),

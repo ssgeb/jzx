@@ -1,0 +1,28 @@
+version: 1
+
+skills:
+  inspect-resources:
+    description: 查询设备、人员、模型及资源配置。
+    instructions:
+      - 核对设备在线状态、人员分配和模型版本，区分实时状态与静态配置。
+      - 资源冲突时列出冲突对象和可核对依据，不自行调整资源。
+
+tools:
+  query_resource:
+    target_agent: RESOURCE
+    operation: query
+    description: 查询当前企业的设备、人员、模型和资源状态。
+
+subagent:
+  id: RESOURCE
+  name: resource-specialist
+  enabled: true
+  description: 资源与模型专家
+  responsibilities:
+    - 负责设备、人员、模型版本、在线状态和资源配置的只读查询。
+    - 发现资源冲突或离线状态时给出证据和排查方向。
+    - 不执行资源分配、模型发布或设备状态修改。
+  skills:
+    - inspect-resources
+  tools:
+    - query_resource

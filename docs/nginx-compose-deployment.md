@@ -136,7 +136,7 @@ Nginx 已为该接口配置：
 
 Skill 下载结果保存在 Docker 命名卷 `assistant-skills` 中，容器重建不会丢失。下载成功只表示进入 `QUARANTINED` 隔离区，不会自动加载或执行。生产环境应在环境文件中缩短 `ASSISTANT_SKILL_ALLOWED_REPOSITORIES`，并把下载请求的 `ref` 固定为已审查的提交哈希。
 
-子智能体定义文件 `python_assistant_service/config/subagents.yaml` 以只读方式挂载到 Python 容器。修改职责、可信 Skill 指令、启停状态或已注册工具组合后，下一次请求按内容摘要重新加载，不需要重启容器；YAML 校验失败时 Deep Agent 不会使用旧权限继续运行，而是进入确定性降级链路。
+子智能体定义目录 `python_assistant_service/config/subagents/` 以只读方式挂载到 Python 容器，目录内一个子智能体对应一个 YAML。修改、增加或删除某个 Agent 文件后，下一次请求会计算目录联合摘要并重新合并，不需要重启容器；任一 YAML 校验失败时 Deep Agent 不会使用旧权限继续运行，而是进入确定性降级链路。
 
 ## 7. 更新、停止与回滚
 

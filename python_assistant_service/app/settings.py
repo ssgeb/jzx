@@ -21,7 +21,7 @@ def _as_csv(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Settings:
     service_name: str = "doorhandlecatch-python-assistant"
-    graph_version: str = "python-deepagents-harness-v3"
+    graph_version: str = "python-deepagents-harness-v4"
     host: str = "127.0.0.1"
     port: int = 8090
     require_signature: bool = True
@@ -39,7 +39,7 @@ class Settings:
     deep_agent_max_iterations: int = 40
     deep_agent_model_timeout_seconds: float = 60.0
     deep_agent_model_max_retries: int = 1
-    subagent_config_path: str = "python_assistant_service/config/subagents.yaml"
+    subagent_config_path: str = "python_assistant_service/config/subagents"
     max_graph_iterations: int = 15
     max_trace_size: int = 24
     rag_enabled: bool = True
@@ -89,7 +89,7 @@ class Settings:
             deep_agent_model_max_retries=int(os.getenv("ASSISTANT_DEEP_AGENT_MODEL_MAX_RETRIES", "1")),
             subagent_config_path=os.getenv(
                 "ASSISTANT_SUBAGENT_CONFIG_PATH",
-                "python_assistant_service/config/subagents.yaml",
+                "python_assistant_service/config/subagents",
             ),
             max_graph_iterations=int(os.getenv("ASSISTANT_MAX_GRAPH_ITERATIONS", "15")),
             max_trace_size=int(os.getenv("ASSISTANT_MAX_TRACE_SIZE", "24")),
