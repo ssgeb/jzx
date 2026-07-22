@@ -6,6 +6,7 @@ import hashlib
 import re
 import threading
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import (
@@ -87,12 +88,32 @@ class SkillDefinition(BaseModel):
         return normalized
 
 
+class HumanInterventionDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    required: bool
+    timing: Literal["before_tool"] = "before_tool"
+    risk_level: Literal["low", "medium", "high"]
+    approval_message: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def approval_message_is_required_for_interrupt(self) -> "HumanInterventionDefinition":
+        message = self.approval_message.strip() if self.approval_message else None
+        if self.risk_level == "high" and not self.required:
+            raise ValueError("high 风险工具必须启用调用前人工介入")
+        if self.required and not message:
+            raise ValueError("需要人工介入的工具必须配置 approval_message")
+        object.__setattr__(self, "approval_message", message)
+        return self
+
+
 class ToolDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     target_agent: str
     operation: str = "query"
     description: str = Field(min_length=1, max_length=500)
+    human_intervention: HumanInterventionDefinition
 
     @field_validator("target_agent")
     @classmethod

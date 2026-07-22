@@ -36,6 +36,8 @@ class DeepAgentRunner(Protocol):
 
     async def invoke(self, state: dict) -> dict | None: ...
 
+    async def resume_tool(self, state: dict) -> dict: ...
+
 
 class AgentService:
     def __init__(
@@ -64,7 +66,13 @@ class AgentService:
         return response
 
     async def resume(self, request: AgentResumeRequest) -> AgentResponse:
-        state = await self._graph.resume(build_resume_state(request))
+        resume_state = build_resume_state(request)
+        if resume_state.get("pending_tool_approval"):
+            if self._deep_agent is None or not hasattr(self._deep_agent, "resume_tool"):
+                raise RuntimeError("工具人工确认恢复器不可用")
+            state = await self._deep_agent.resume_tool(resume_state)
+        else:
+            state = await self._graph.resume(resume_state)
         response = self._response(request.request_id, state)
         self._schedule_memory(state, response)
         return response

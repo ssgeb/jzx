@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 from typing import Any, Sequence
 
@@ -14,7 +15,7 @@ from python_assistant_service.app.deep_agent import (
     HarnessDeepAgent,
     ToolEvidence,
 )
-from python_assistant_service.app.schemas import AgentInvokeRequest
+from python_assistant_service.app.schemas import AgentInvokeRequest, AgentResumeRequest
 from python_assistant_service.app.service import AgentService
 from python_assistant_service.app.settings import Settings
 from python_assistant_service.app.state import build_message_state
@@ -69,6 +70,28 @@ class RecordingFactory:
         self.calls += 1
         self.kwargs = kwargs
         return FakeCompiledAgent(self)
+
+
+class OpsApprovalCompiledAgent:
+    def __init__(self, owner):
+        self.owner = owner
+
+    async def ainvoke(self, inputs, config):
+        ops = next(
+            item for item in self.owner.kwargs["subagents"]
+            if item["name"] == "ops-specialist"
+        )
+        self.owner.tool_result = await ops["tools"][0].ainvoke(
+            {"question": "查询消息链路和服务健康状态"}
+        )
+        return {"messages": [{"role": "assistant", "content": "等待人工确认"}]}
+
+
+class OpsApprovalFactory(RecordingFactory):
+    def __call__(self, *args, **kwargs):
+        self.calls += 1
+        self.kwargs = kwargs
+        return OpsApprovalCompiledAgent(self)
 
 
 def request(content="查询检测任务和设备在线状态"):
@@ -189,6 +212,76 @@ def test_harness_deep_agent_uses_four_restricted_subagents_and_fixed_java_tool()
     assert "设备离线时检查网络" in tools.calls[0][2]["prompt"]
     assert "用户关心设备编号" in tools.calls[0][2]["prompt"]
     assert json.loads(factory.tool_result)["content"] == "DETECTION 实时数据"
+
+
+class NoFallbackGraph:
+    async def invoke(self, state):
+        raise AssertionError("Deep Agent 可用时不应调用降级图")
+
+    async def resume(self, state):
+        raise AssertionError("工具人工确认不应恢复为普通写操作图")
+
+
+def test_yaml_high_risk_tool_interrupts_before_call_and_resumes_after_approval():
+    factory = OpsApprovalFactory()
+    tools = RecordingTools()
+    harness = build_harness(factory, tools=tools)
+    service = AgentService(NoFallbackGraph(), deep_agent=harness)
+
+    pending = asyncio.run(service.invoke(request("查看系统运行状态和消息链路")))
+
+    assert pending.exit_reason == "PENDING_CONFIRMATION"
+    assert pending.result_type == "PENDING_ACTION"
+    assert pending.action is not None
+    assert pending.action.target_agent == "OPS"
+    assert pending.action.parameters == {
+        "toolName": "query_ops",
+        "riskLevel": "high",
+    }
+    assert "敏感运维信息" in pending.content
+    assert tools.calls == []
+    assert json.loads(factory.tool_result)["status"] == "PENDING_HUMAN_APPROVAL"
+
+    changed_checkpoint = copy.deepcopy(pending.checkpoint)
+    changed_checkpoint["pending_tool_approval"]["definition_checksum"] = "changed"
+    with pytest.raises(RuntimeError, match="工具配置已变化"):
+        asyncio.run(
+            service.resume(
+                AgentResumeRequest(
+                    request_id="req-deep-changed",
+                    idempotency_key=f"chat-action:{pending.action.action_id}",
+                    tenant_user_id=42,
+                    username="alice",
+                    session_id="sess-deep-1",
+                    action_id=pending.action.action_id,
+                    confirmed=True,
+                    checkpoint=changed_checkpoint,
+                )
+            )
+        )
+    assert tools.calls == []
+
+    resumed = asyncio.run(
+        service.resume(
+            AgentResumeRequest(
+                request_id="req-deep-resume",
+                idempotency_key=f"chat-action:{pending.action.action_id}",
+                tenant_user_id=42,
+                username="alice",
+                session_id="sess-deep-1",
+                action_id=pending.action.action_id,
+                confirmed=True,
+                checkpoint=pending.checkpoint,
+            )
+        )
+    )
+
+    assert resumed.exit_reason == "COMPLETE"
+    assert resumed.content == "OPS 实时数据"
+    assert len(tools.calls) == 1
+    assert tools.calls[0][0:2] == ("OPS", "query")
+    assert "human_intervention_resume" in resumed.trace
+    assert resumed.checkpoint["pending_tool_approval"] == {}
 
 
 class RecordingChatModel(BaseChatModel):

@@ -12,6 +12,10 @@ tools:
     target_agent: RESOURCE
     operation: query
     description: 查询当前企业的设备、人员、模型和资源状态。
+    human_intervention:
+      required: false
+      timing: before_tool
+      risk_level: low
 
 subagent:
   id: RESOURCE

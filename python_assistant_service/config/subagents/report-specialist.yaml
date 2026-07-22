@@ -12,6 +12,10 @@ tools:
     target_agent: REPORT
     operation: query
     description: 查询当前企业的质检报表、趋势、统计和工作量数据。
+    human_intervention:
+      required: false
+      timing: before_tool
+      risk_level: low
 
 subagent:
   id: REPORT

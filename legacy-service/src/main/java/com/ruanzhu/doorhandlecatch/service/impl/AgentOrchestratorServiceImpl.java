@@ -299,6 +299,7 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
         }
 
         if (!request.isConfirmed()) {
+            clearPendingConfirmationCheckpoint(tenant, request.getSessionId());
             return chatSessionService.appendAssistantMessage(
                     tenant, request.getSessionId(),
                     "已取消这次操作。如果你愿意，我可以继续帮你改成查询、总结，或者换一种执行方式。",
@@ -310,7 +311,10 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
 
         try {
             if (isPythonEngine()) {
-                return handlePythonConfirmation(tenant, request);
+                ChatMessageResponse response = handlePythonConfirmation(tenant, request);
+                chatSessionService.transitionPendingAction(
+                        tenant, request.getSessionId(), request.getActionId(), "EXECUTING", "COMPLETED", null);
+                return response;
             }
             AgentState result = chatGraph.resume(tenant, request.getSessionId(), Map.of(
                     AgentState.KEY_CONFIRMED, true
@@ -338,6 +342,21 @@ public class AgentOrchestratorServiceImpl implements AgentOrchestratorService {
                     abbreviateError(ex.getMessage()));
             throw ex;
         }
+    }
+
+    private void clearPendingConfirmationCheckpoint(TenantContext tenant, String sessionId) {
+        AgentState state = checkpointer.load(tenant, sessionId);
+        if (state == null) {
+            return;
+        }
+        state.set(AgentState.KEY_PENDING_ACTION_ID, null)
+                .set(AgentState.KEY_PENDING_TOOL_APPROVAL, null)
+                .set(AgentState.KEY_ACTION, null)
+                .set(AgentState.KEY_CONFIRMED, false)
+                .set(AgentState.KEY_CURRENT_NODE, null)
+                .set(AgentState.KEY_EXIT_REASON, AgentState.EXIT_COMPLETE)
+                .set(AgentState.KEY_CONVERSATION_PHASE, AgentState.PHASE_RESPONDING);
+        checkpointer.save(tenant, sessionId, state);
     }
 
     private ChatMessageResponse handlePythonUserMessage(

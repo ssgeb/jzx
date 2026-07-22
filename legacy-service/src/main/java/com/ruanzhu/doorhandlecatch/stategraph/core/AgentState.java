@@ -32,6 +32,8 @@ public class AgentState {
     public static final String KEY_ITERATION = "iteration";
     public static final String KEY_CONFIRMED = "confirmed";
     public static final String KEY_PENDING_ACTION_ID = "pending_action_id";
+    public static final String KEY_PENDING_TOOL_APPROVAL = "pending_tool_approval";
+    public static final String KEY_ACTION = "action";
     public static final String KEY_EXIT_REASON = "exit_reason";
     public static final String KEY_CURRENT_ROUTE = "current_route";
     public static final String KEY_CURRENT_PAGE_TITLE = "current_page_title";

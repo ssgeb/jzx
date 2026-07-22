@@ -21,7 +21,7 @@ def _as_csv(value: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class Settings:
     service_name: str = "doorhandlecatch-python-assistant"
-    graph_version: str = "python-deepagents-harness-v4"
+    graph_version: str = "python-deepagents-harness-v5"
     host: str = "127.0.0.1"
     port: int = 8090
     require_signature: bool = True

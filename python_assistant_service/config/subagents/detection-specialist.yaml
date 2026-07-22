@@ -18,6 +18,10 @@ tools:
     target_agent: DETECTION
     operation: query
     description: 查询当前企业和当前用户有权访问的检测、缺陷、复核及处置数据。
+    human_intervention:
+      required: false
+      timing: before_tool
+      risk_level: low
 
 subagent:
   id: DETECTION

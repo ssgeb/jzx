@@ -34,6 +34,7 @@ class AgentState(TypedDict, total=False):
     iteration: int
     confirmed: bool
     pending_action_id: str
+    pending_tool_approval: dict[str, Any]
     exit_reason: str
     node_trace: list[str]
     route_trace: list[str]

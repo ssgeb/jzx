@@ -12,6 +12,11 @@ tools:
     target_agent: OPS
     operation: query
     description: 查询平台运行状态、业务导航和故障诊断信息。
+    human_intervention:
+      required: true
+      timing: before_tool
+      risk_level: high
+      approval_message: 即将读取平台运行状态、消息链路和故障诊断信息，其中可能包含敏感运维信息。请确认是否继续。
 
 subagent:
   id: OPS

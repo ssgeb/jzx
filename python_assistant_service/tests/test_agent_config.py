@@ -20,6 +20,9 @@ def write_config(
     tool="query_detection",
     target_agent="DETECTION",
     enabled="true",
+    approval_required="false",
+    risk_level="low",
+    approval_message="",
     filename=None,
 ):
     directory.mkdir(parents=True, exist_ok=True)
@@ -38,6 +41,11 @@ def write_config(
                 target_agent: {target_agent}
                 operation: query
                 description: 查询检测数据。
+                human_intervention:
+                  required: {approval_required}
+                  timing: before_tool
+                  risk_level: {risk_level}
+            {approval_message}
             subagent:
               id: {agent_id}
               name: {name}
@@ -69,6 +77,10 @@ def test_project_uses_one_yaml_file_for_each_subagent():
         "REPORT",
         "OPS",
     }
+    assert catalog.tools["query_detection"].human_intervention.required is False
+    assert catalog.tools["query_ops"].human_intervention.required is True
+    assert catalog.tools["query_ops"].human_intervention.timing == "before_tool"
+    assert catalog.tools["query_ops"].human_intervention.risk_level == "high"
 
 
 def test_yaml_directory_merges_agent_responsibilities_skills_and_tools(tmp_path):
@@ -180,6 +192,26 @@ def test_yaml_cannot_forge_trusted_tool_backend_binding(tmp_path):
     write_config(directory, target_agent="RESOURCE")
 
     with pytest.raises(AgentConfigError, match="工具绑定与代码白名单不一致"):
+        YamlSubagentLoader(directory).load()
+
+
+def test_required_human_intervention_must_explain_approval(tmp_path):
+    directory = tmp_path / "subagents"
+    write_config(
+        directory,
+        approval_required="true",
+        risk_level="high",
+    )
+
+    with pytest.raises(AgentConfigError, match="必须配置 approval_message"):
+        YamlSubagentLoader(directory).load()
+
+
+def test_high_risk_tool_cannot_disable_human_intervention(tmp_path):
+    directory = tmp_path / "subagents"
+    write_config(directory, risk_level="high", approval_required="false")
+
+    with pytest.raises(AgentConfigError, match="high 风险工具必须启用"):
         YamlSubagentLoader(directory).load()
 
 

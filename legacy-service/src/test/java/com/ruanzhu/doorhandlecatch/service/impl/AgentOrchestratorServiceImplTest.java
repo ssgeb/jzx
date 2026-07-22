@@ -420,6 +420,78 @@ class AgentOrchestratorServiceImplTest {
     }
 
     @Test
+    void successfulPythonConfirmationCompletesClaimedAction() throws Exception {
+        ChatConfirmActionRequest request = confirmationRequest();
+        AgentOrchestratorServiceImpl pythonService = pythonEngineService();
+        Mockito.when(chatSessionService.getPendingAction(
+                        new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId()))
+                .thenReturn(pendingAction(request));
+        Mockito.when(chatSessionService.transitionPendingAction(
+                        new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId(),
+                        "PENDING", "EXECUTING", null))
+                .thenReturn(true);
+        AgentState checkpoint = AgentState.create(request.getSessionId(), "查看运维状态", "admin")
+                .set(AgentState.KEY_PENDING_ACTION_ID, request.getActionId())
+                .set(AgentState.KEY_PENDING_TOOL_APPROVAL, Map.of("action_id", request.getActionId()));
+        Mockito.when(checkpointer.load(new TenantContext(1L, "admin"), request.getSessionId()))
+                .thenReturn(checkpoint);
+        PythonAgentResponse pythonResponse = new PythonAgentResponse();
+        pythonResponse.setContent("运维状态查询完成");
+        pythonResponse.setResultType("TEXT");
+        pythonResponse.setIntent("OPS_QUERY");
+        pythonResponse.setExitReason("COMPLETE");
+        pythonResponse.setCheckpoint(Map.of(
+                "thread_id", request.getSessionId(),
+                "intent", "OPS_QUERY",
+                "exit_reason", "COMPLETE"));
+        Mockito.when(pythonAssistantClient.resume(Mockito.any())).thenReturn(pythonResponse);
+
+        pythonService.confirmAction("admin", request);
+
+        Mockito.verify(pythonAssistantClient).resume(Mockito.argThat(value ->
+                request.getActionId().equals(value.getActionId())
+                        && Boolean.TRUE.equals(value.getConfirmed())
+                        && value.getCheckpoint().containsKey(AgentState.KEY_PENDING_TOOL_APPROVAL)));
+        Mockito.verify(chatSessionService).transitionPendingAction(
+                new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId(),
+                "EXECUTING", "COMPLETED", null);
+    }
+
+    @Test
+    void cancellationClearsPendingToolApprovalFromCheckpoint() throws Exception {
+        ChatConfirmActionRequest request = confirmationRequest();
+        request.setConfirmed(false);
+        Mockito.when(chatSessionService.getPendingAction(
+                        new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId()))
+                .thenReturn(pendingAction(request));
+        Mockito.when(chatSessionService.transitionPendingAction(
+                        new TenantContext(1L, "admin"), request.getSessionId(), request.getActionId(),
+                        "PENDING", "CANCELLED", null))
+                .thenReturn(true);
+        AgentState checkpoint = AgentState.create(request.getSessionId(), "查看运维状态", "admin")
+                .set(AgentState.KEY_PENDING_ACTION_ID, request.getActionId())
+                .set(AgentState.KEY_PENDING_TOOL_APPROVAL, Map.of("action_id", request.getActionId()))
+                .set(AgentState.KEY_ACTION, Map.of("action_id", request.getActionId()))
+                .set(AgentState.KEY_CURRENT_NODE, "human_intervention")
+                .set(AgentState.KEY_EXIT_REASON, AgentState.EXIT_PENDING_CONFIRMATION);
+        Mockito.when(checkpointer.load(new TenantContext(1L, "admin"), request.getSessionId()))
+                .thenReturn(checkpoint);
+
+        orchestratorService.confirmAction("admin", request);
+
+        Mockito.verify(checkpointer).save(
+                Mockito.eq(new TenantContext(1L, "admin")),
+                Mockito.eq(request.getSessionId()),
+                Mockito.argThat(state ->
+                        !state.toMap().containsKey(AgentState.KEY_PENDING_ACTION_ID)
+                                && !state.toMap().containsKey(AgentState.KEY_PENDING_TOOL_APPROVAL)
+                                && !state.toMap().containsKey(AgentState.KEY_ACTION)
+                                && AgentState.EXIT_COMPLETE.equals(state.getString(AgentState.KEY_EXIT_REASON))));
+        Mockito.verifyNoInteractions(pythonAssistantClient);
+        Mockito.verifyNoInteractions(chatGraph);
+    }
+
+    @Test
     void failedConfirmationRecordsFailureWithoutCompleting() throws Exception {
         ChatConfirmActionRequest request = confirmationRequest();
         Mockito.when(chatSessionService.getPendingAction(
@@ -450,6 +522,24 @@ class AgentOrchestratorServiceImplTest {
         request.setActionId("action-1");
         request.setConfirmed(true);
         return request;
+    }
+
+    private AgentOrchestratorServiceImpl pythonEngineService() {
+        ChatAssistantProperties properties = new ChatAssistantProperties();
+        properties.setEngine("python");
+        properties.setFallbackToJava(false);
+        return new AgentOrchestratorServiceImpl(
+                chatSessionService,
+                chatGraph,
+                routerNode,
+                checkpointer,
+                objectMapper,
+                mem0Client,
+                ragKnowledgeService,
+                Runnable::run,
+                properties,
+                pythonAssistantClient
+        );
     }
 
     private ChatPendingAction pendingAction(ChatConfirmActionRequest request) throws Exception {

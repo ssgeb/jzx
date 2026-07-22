@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import threading
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -44,6 +45,7 @@ _PROFILE_REGISTERED = False
 class ToolEvidence:
     successful_calls: list[dict[str, str]] = field(default_factory=list)
     failed_agents: list[str] = field(default_factory=list)
+    pending_approval: dict[str, str] | None = None
 
 
 def deep_agent_configuration_status(settings: Settings) -> str:
@@ -178,6 +180,8 @@ class HarnessDeepAgent:
             {"messages": [{"role": "user", "content": query}]},
             config={"recursion_limit": self._settings.deep_agent_max_iterations},
         )
+        if evidence.pending_approval is not None:
+            return self._pending_tool_approval_state(state, evidence.pending_approval)
         content = self._last_answer(result)
         if not content:
             raise RuntimeError("Harness Deep Agent 未返回有效回答")
@@ -232,53 +236,227 @@ class HarnessDeepAgent:
         memory_context: str,
         evidence: ToolEvidence,
     ):
-        agent = definition.target_agent
-
         @tool(tool_name, description=definition.description)
         async def query_business_data(question: str) -> str:
             """查询当前租户用户有权访问的实时业务数据。"""
-            original = str(state.get("user_input", ""))
-            prompt_parts = [f"原始用户问题：{original}", f"本专家需要解决：{question}"]
-            if rag_context:
-                prompt_parts.append(
-                    "系统知识库参考（实时状态以业务数据为准）：\n" + rag_context
-                )
-            if memory_context:
-                prompt_parts.append("当前用户历史记忆：\n" + memory_context)
-            digest = hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
-            try:
-                result = await self._tool_client.execute(
-                    agent,
-                    "query",
+            question = question.strip()
+            if not question or len(question) > 4000:
+                raise RuntimeError("业务工具问题不能为空且不得超过 4000 字符")
+            policy = definition.human_intervention
+            if policy.required:
+                if evidence.pending_approval is None:
+                    evidence.pending_approval = {
+                        "tool_name": tool_name,
+                        "target_agent": definition.target_agent,
+                        "question": question,
+                        "definition_checksum": self._tool_definition_checksum(definition),
+                        "approval_message": policy.approval_message or "请确认是否执行该工具。",
+                        "risk_level": policy.risk_level,
+                    }
+                return json.dumps(
                     {
-                        "requestId": state.get("request_id"),
-                        "tenantUserId": state.get("tenant_user_id"),
-                        "username": state.get("username"),
-                        "sessionId": state.get("thread_id"),
-                        "prompt": "\n\n".join(prompt_parts),
-                        "slots": dict(state.get("slots", {})),
-                        "currentRoute": state.get("current_route", ""),
-                        "currentPageTitle": state.get("current_page_title", ""),
+                        "status": "PENDING_HUMAN_APPROVAL",
+                        "tool": tool_name,
+                        "message": policy.approval_message,
                     },
-                    f"{state.get('idempotency_key', '')}:deep:{agent.lower()}:{digest}",
+                    ensure_ascii=False,
                 )
-            except Exception:
-                evidence.failed_agents.append(agent)
-                raise
-            content = result.get("content") or result.get("message")
-            if content is None or not str(content).strip():
-                evidence.failed_agents.append(agent)
-                raise RuntimeError(f"{agent} 业务工具返回空内容")
-            evidence.successful_calls.append(
-                {
-                    "agent": agent,
-                    "tool": tool_name,
-                    "questionHash": digest,
-                }
+            result = await self._execute_query_tool(
+                tool_name,
+                definition,
+                state,
+                question,
+                rag_context,
+                memory_context,
+                evidence,
             )
             return json.dumps(result, ensure_ascii=False)[:12000]
 
         return query_business_data
+
+    async def _execute_query_tool(
+        self,
+        tool_name: str,
+        definition: ToolDefinition,
+        state: AgentState,
+        question: str,
+        rag_context: str,
+        memory_context: str,
+        evidence: ToolEvidence,
+    ) -> dict[str, Any]:
+        agent = definition.target_agent
+        original = str(state.get("user_input", ""))
+        prompt_parts = [f"原始用户问题：{original}", f"本专家需要解决：{question}"]
+        if rag_context:
+            prompt_parts.append(
+                "系统知识库参考（实时状态以业务数据为准）：\n" + rag_context
+            )
+        if memory_context:
+            prompt_parts.append("当前用户历史记忆：\n" + memory_context)
+        digest = hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
+        try:
+            result = await self._tool_client.execute(
+                agent,
+                definition.operation,
+                {
+                    "requestId": state.get("request_id"),
+                    "tenantUserId": state.get("tenant_user_id"),
+                    "username": state.get("username"),
+                    "sessionId": state.get("thread_id"),
+                    "prompt": "\n\n".join(prompt_parts),
+                    "slots": dict(state.get("slots", {})),
+                    "currentRoute": state.get("current_route", ""),
+                    "currentPageTitle": state.get("current_page_title", ""),
+                },
+                f"{state.get('idempotency_key', '')}:deep:{agent.lower()}:{digest}",
+            )
+        except Exception:
+            evidence.failed_agents.append(agent)
+            raise
+        content = result.get("content") or result.get("message")
+        if content is None or not str(content).strip():
+            evidence.failed_agents.append(agent)
+            raise RuntimeError(f"{agent} 业务工具返回空内容")
+        evidence.successful_calls.append(
+            {"agent": agent, "tool": tool_name, "questionHash": digest}
+        )
+        return result
+
+    async def resume_tool(self, state: AgentState) -> AgentState:
+        pending = state.get("pending_tool_approval")
+        if not isinstance(pending, dict):
+            raise RuntimeError("不存在待人工确认的工具调用")
+        if not state.get("confirmed"):
+            raise RuntimeError("工具调用尚未获得人工确认")
+        action_id = str(pending.get("action_id", ""))
+        if not action_id or action_id != str(state.get("resume_action_id", "")):
+            raise RuntimeError("待确认工具动作编号不一致")
+
+        catalog = self._config_loader.load()
+        tool_name = str(pending.get("tool_name", ""))
+        definition = catalog.tools.get(tool_name)
+        if definition is None:
+            raise RuntimeError("待确认工具已不在当前 YAML 配置中")
+        if self._tool_definition_checksum(definition) != pending.get(
+            "definition_checksum"
+        ):
+            raise RuntimeError("待确认工具配置已变化，请重新发起请求")
+        if not definition.human_intervention.required:
+            raise RuntimeError("待确认工具的人工介入策略已变化，请重新发起请求")
+
+        evidence = ToolEvidence()
+        result = await self._execute_query_tool(
+            tool_name,
+            definition,
+            state,
+            str(pending.get("question", "")),
+            "",
+            "",
+            evidence,
+        )
+        content = result.get("content") or result.get("message")
+        return self._complete_approved_tool_state(
+            state,
+            str(content),
+            str(result.get("resultType", "TEXT")),
+            evidence,
+        )
+
+    @staticmethod
+    def _tool_definition_checksum(definition: ToolDefinition) -> str:
+        canonical = json.dumps(
+            definition.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _pending_tool_approval_state(
+        self, state: AgentState, pending: dict[str, str]
+    ) -> AgentState:
+        result = AgentState(**state)
+        action_id = str(uuid.uuid4())
+        route = keyword_route(str(state.get("user_input", "")))
+        preview = pending["approval_message"]
+        turn = int(state.get("turn", 0)) + 1
+        recent = list(state.get("recent_msgs", []))
+        recent.extend(
+            [
+                {"role": "user", "content": state.get("user_input", ""), "turn": turn},
+                {"role": "assistant", "content": preview, "turn": turn},
+            ]
+        )
+        persisted_pending = {
+            **pending,
+            "action_id": action_id,
+        }
+        result.update(
+            turn=turn,
+            route_decision=route,
+            intent=route["intent"],
+            pending_action_id=action_id,
+            pending_tool_approval=persisted_pending,
+            action={
+                "action_id": action_id,
+                "intent": route["intent"],
+                "target_agent": pending["target_agent"],
+                "preview": preview,
+                "task_prompt": str(state.get("user_input", "")),
+                "parameters": {
+                    "toolName": pending["tool_name"],
+                    "riskLevel": pending["risk_level"],
+                },
+            },
+            result_content=preview,
+            result_type="PENDING_ACTION",
+            phase="AWAITING_TOOL_APPROVAL",
+            exit_reason="PENDING_CONFIRMATION",
+            current_node="human_intervention",
+            node_trace=(
+                list(state.get("node_trace", []))
+                + ["context", "harness_deep_agent", "human_intervention"]
+            )[-self._settings.max_trace_size :],
+            recent_msgs=recent[-20:],
+        )
+        return result
+
+    def _complete_approved_tool_state(
+        self,
+        state: AgentState,
+        content: str,
+        result_type: str,
+        evidence: ToolEvidence,
+    ) -> AgentState:
+        result = AgentState(**state)
+        recent = list(state.get("recent_msgs", []))
+        recent.append(
+            {
+                "role": "assistant",
+                "content": content,
+                "turn": int(state.get("turn", 0)),
+            }
+        )
+        trace = list(state.get("node_trace", [])) + [
+            "human_intervention_resume",
+            "approved_tool",
+            "deep_agent_quality_gate",
+        ]
+        result.update(
+            confirmed=False,
+            pending_action_id="",
+            pending_tool_approval={},
+            action={},
+            data_context={"deepAgentEvidence": evidence.successful_calls},
+            result_content=content,
+            result_type=result_type,
+            phase="RESPONDING",
+            exit_reason="COMPLETE",
+            current_node="approved_tool",
+            node_trace=trace[-self._settings.max_trace_size :],
+            recent_msgs=recent[-20:],
+        )
+        return result
 
     @staticmethod
     def _subagent_prompt(
@@ -295,11 +473,22 @@ class HarnessDeepAgent:
                 f"- {skill_name}：{skill.description}\n{instructions}"
             )
         allowed_tools = "、".join(subagent.tools)
+        approval_tools = [
+            name
+            for name in subagent.tools
+            if catalog.tools[name].human_intervention.required
+        ]
+        approval_rule = (
+            f"调用 {'、'.join(approval_tools)} 前必须暂停并等待人工确认。"
+            if approval_tools
+            else "当前分配工具均为自动批准的低风险只读工具。"
+        )
         return (
             f"你是 DoorHandleCatch Harness Agent 的{subagent.description}。\n\n"
             f"职责：\n{responsibilities}\n\n"
             f"已分配 Skills：\n{chr(10).join(skill_sections)}\n\n"
             f"只允许使用这些工具：{allowed_tools}。"
+            f"{approval_rule}"
             "不得伪造数据，不得尝试修改状态，不得把任务再委派给其他智能体。"
             "必须根据工具结果整理为简洁、可核对的中文结论后返回主 Agent。"
         )
