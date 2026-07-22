@@ -25,8 +25,8 @@ from .agent_config import (
     SubagentCatalog,
     SubagentDefinition,
     ToolDefinition,
-    YamlSubagentLoader,
 )
+from .loader import YamlSubagentLoader
 from .clients import ToolClient
 from .memory import format_memories
 from .routing import has_write_intent, keyword_route

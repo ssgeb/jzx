@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import PrivateAttr
 
-from python_assistant_service.app.agent_config import YamlSubagentLoader
+from python_assistant_service.app.loader import YamlSubagentLoader
 from python_assistant_service.app.deep_agent import (
     FILESYSTEM_AND_EXECUTION_TOOLS,
     HarnessDeepAgent,

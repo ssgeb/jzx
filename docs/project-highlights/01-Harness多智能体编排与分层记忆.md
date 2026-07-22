@@ -364,7 +364,7 @@ Deep Agents 使用隔离上下文执行子 Agent，主 Agent 只接收每个子 
 
 #### 3.2.4 YAML 子智能体弹性加载
 
-检测、资源、报表和运维子 Agent 已从 Python 硬编码改为受信 YAML 配置。`config/subagents/` 目录采用“一 Agent 一 YAML”：每个文件声明自己的 `id`、名称、启停状态、职责、Skills 和工具；Python 只有在全部文件合并验证成功后，才把启用的子 Agent 连接到 Harness 主 Agent。
+检测、资源、报表和运维子 Agent 已从 Python 硬编码改为受信 YAML 配置。`config/subagents/` 目录采用“一 Agent 一 YAML”：每个文件声明自己的 `id`、名称、启停状态、职责、Skills 和工具；`agent_config.py` 定义严格配置模型和安全约束，独立的 `loader.py` 负责目录扫描、YAML 防护、合并和热加载。Python 只有在全部文件合并验证成功后，才把启用的子 Agent 连接到 Harness 主 Agent。
 
 ~~~text
 修改、增加或删除某个子 Agent YAML

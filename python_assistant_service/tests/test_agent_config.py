@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from python_assistant_service.app.agent_config import AgentConfigError, YamlSubagentLoader
+from python_assistant_service.app.agent_config import AgentConfigError
+from python_assistant_service.app.loader import YamlSubagentLoader
 
 
 PROJECT_CONFIG = Path("python_assistant_service/config/subagents")
