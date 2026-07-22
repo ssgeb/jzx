@@ -19,6 +19,13 @@ from langchain.tools import tool
 from langchain_core.language_models import BaseChatModel
 from langchain_deepseek import ChatDeepSeek
 
+from .agent_config import (
+    AgentConfigError,
+    SubagentCatalog,
+    SubagentDefinition,
+    ToolDefinition,
+    YamlSubagentLoader,
+)
 from .clients import ToolClient
 from .memory import format_memories
 from .routing import has_write_intent, keyword_route
@@ -29,25 +36,6 @@ from .state import AgentState
 FILESYSTEM_AND_EXECUTION_TOOLS = frozenset(
     {"ls", "read_file", "write_file", "edit_file", "glob", "grep", "execute"}
 )
-AGENT_DESCRIPTIONS = {
-    "DETECTION": (
-        "detection-specialist",
-        "检测与质检专家，查询检测任务、缺陷、处置、复核、工单和证据数据。",
-    ),
-    "RESOURCE": (
-        "resource-specialist",
-        "资源专家，查询设备、人员、模型、在线状态和资源配置。",
-    ),
-    "REPORT": (
-        "report-specialist",
-        "报表与分析专家，查询日报、周报、趋势、统计、汇总和工作量。",
-    ),
-    "OPS": (
-        "ops-specialist",
-        "运维与导航专家，查询系统状态、页面入口、业务流程和故障定位信息。",
-    ),
-}
-
 _PROFILE_LOCK = threading.Lock()
 _PROFILE_REGISTERED = False
 
@@ -113,6 +101,7 @@ class HarnessDeepAgent:
         *,
         model: BaseChatModel | None = None,
         agent_factory: DeepAgentFactory = create_deep_agent,
+        config_loader: YamlSubagentLoader | None = None,
     ) -> None:
         self._settings = settings
         self._tool_client = tool_client
@@ -120,49 +109,68 @@ class HarnessDeepAgent:
         self._memory = memory
         self._agent_factory = agent_factory
         self._model = model
+        self._config_loader = config_loader or YamlSubagentLoader(
+            settings.subagent_config_path
+        )
         _register_restricted_harness_profile()
 
     @property
     def available(self) -> bool:
-        if self._model is not None:
-            return self._settings.deep_agent_enabled
-        return deep_agent_configuration_status(self._settings) == "READY"
+        return self.configuration_status == "READY"
 
     @property
     def configuration_status(self) -> str:
-        if self._model is not None:
-            return "READY" if self._settings.deep_agent_enabled else "DISABLED"
-        return deep_agent_configuration_status(self._settings)
+        base_status = (
+            "READY" if self._model is not None and self._settings.deep_agent_enabled
+            else "DISABLED" if self._model is not None
+            else deep_agent_configuration_status(self._settings)
+        )
+        if base_status != "READY":
+            return base_status
+        try:
+            self._config_loader.load()
+        except AgentConfigError:
+            return "SUBAGENT_CONFIG_INVALID"
+        return "READY"
 
     async def invoke(self, state: AgentState) -> AgentState | None:
         query = str(state.get("user_input", "")).strip()
         if not self.available or not query or has_write_intent(query.lower()):
             return None
 
+        catalog = self._config_loader.load()
+
         rag_context, memories, degraded = await self._load_context(state, query)
         memory_context = format_memories(memories)
         model = self._model or self._build_model()
         evidence = ToolEvidence()
         tools = {
-            agent: self._build_query_tool(
-                agent, state, rag_context, memory_context, evidence
+            tool_name: self._build_query_tool(
+                tool_name,
+                definition,
+                state,
+                rag_context,
+                memory_context,
+                evidence,
             )
-            for agent in AGENT_DESCRIPTIONS
+            for tool_name, definition in catalog.tools.items()
         }
         subagents = [
             {
-                "name": name,
-                "description": description,
-                "system_prompt": self._subagent_prompt(agent, description),
-                "tools": [tools[agent]],
+                "name": subagent.name,
+                "description": subagent.description,
+                "system_prompt": self._subagent_prompt(subagent, catalog),
+                "tools": [tools[tool_name] for tool_name in subagent.tools],
                 "model": model,
             }
-            for agent, (name, description) in AGENT_DESCRIPTIONS.items()
+            for subagent in catalog.enabled_subagents
         ]
         graph = self._agent_factory(
             model=model,
             tools=[],
-            system_prompt=self._supervisor_prompt(state, rag_context, memory_context),
+            system_prompt=self._supervisor_prompt(
+                state, rag_context, memory_context, catalog
+            ),
             subagents=subagents,
             name="doorhandlecatch-harness-agent",
         )
@@ -217,15 +225,16 @@ class HarnessDeepAgent:
 
     def _build_query_tool(
         self,
-        agent: str,
+        tool_name: str,
+        definition: ToolDefinition,
         state: AgentState,
         rag_context: str,
         memory_context: str,
         evidence: ToolEvidence,
     ):
-        tool_name = f"query_{agent.lower()}"
+        agent = definition.target_agent
 
-        @tool(tool_name)
+        @tool(tool_name, description=definition.description)
         async def query_business_data(question: str) -> str:
             """查询当前租户用户有权访问的实时业务数据。"""
             original = str(state.get("user_input", ""))
@@ -272,21 +281,44 @@ class HarnessDeepAgent:
         return query_business_data
 
     @staticmethod
-    def _subagent_prompt(agent: str, description: str) -> str:
+    def _subagent_prompt(
+        subagent: SubagentDefinition, catalog: SubagentCatalog
+    ) -> str:
+        responsibilities = "\n".join(
+            f"- {item}" for item in subagent.responsibilities
+        )
+        skill_sections = []
+        for skill_name in subagent.skills:
+            skill = catalog.skills[skill_name]
+            instructions = "\n".join(f"  - {item}" for item in skill.instructions)
+            skill_sections.append(
+                f"- {skill_name}：{skill.description}\n{instructions}"
+            )
+        allowed_tools = "、".join(subagent.tools)
         return (
-            f"你是 DoorHandleCatch Harness Agent 的{description}"
-            f"你只能使用 query_{agent.lower()} 读取当前用户有权访问的数据。"
+            f"你是 DoorHandleCatch Harness Agent 的{subagent.description}。\n\n"
+            f"职责：\n{responsibilities}\n\n"
+            f"已分配 Skills：\n{chr(10).join(skill_sections)}\n\n"
+            f"只允许使用这些工具：{allowed_tools}。"
             "不得伪造数据，不得尝试修改状态，不得把任务再委派给其他智能体。"
-            "将工具结果整理为简洁、可核对的中文结论后返回主 Agent。"
+            "必须根据工具结果整理为简洁、可核对的中文结论后返回主 Agent。"
         )
 
     @staticmethod
     def _supervisor_prompt(
-        state: AgentState, rag_context: str, memory_context: str
+        state: AgentState,
+        rag_context: str,
+        memory_context: str,
+        catalog: SubagentCatalog,
     ) -> str:
+        available_agents = "；".join(
+            f"{item.name}（{item.description}）"
+            for item in catalog.enabled_subagents
+        )
         context_parts = [
             "你是 DoorHandleCatch 工业质检平台的 Harness 主 Agent。",
-            "你负责分解用户目标、使用 write_todos 规划复杂任务，并通过 task 委派给检测、资源、报表或运维专家。",
+            "你负责分解用户目标、使用 write_todos 规划复杂任务，并通过 task 委派给 YAML 中启用的子智能体。",
+            f"当前可委派子智能体：{available_agents}。",
             "涉及多个领域时可分别委派，但简单问题只委派给一个最匹配的专家。",
             "不得自行构造实时业务数据；必须以子 Agent 返回的 Java 业务工具结果为准。",
             "当前链路只处理读查询。如果判断用户想修改数据，明确说明需要进入系统的人工确认流程，不要尝试执行。",

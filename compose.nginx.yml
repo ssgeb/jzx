@@ -34,6 +34,7 @@ services:
       ASSISTANT_PORT: 8090
       JAVA_AGENT_TOOL_BASE_URL: http://nginx:8081
       ASSISTANT_SKILLS_ROOT: /app/runtime/assistant-skills
+      ASSISTANT_SUBAGENT_CONFIG_PATH: /app/config/subagents.yaml
     expose:
       - "8090"
     extra_hosts:
@@ -43,6 +44,7 @@ services:
         condition: service_healthy
     volumes:
       - assistant-skills:/app/runtime/assistant-skills
+      - ./python_assistant_service/config:/app/config:ro
     networks:
       - doorhandle-network
     restart: unless-stopped

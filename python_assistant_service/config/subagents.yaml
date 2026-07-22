@@ -1,0 +1,103 @@
+version: 1
+
+# 这里的 Skill 是受版本控制的可信业务指令，不等同于下载后处于 QUARANTINED 的外部 Skill。
+skills:
+  inspect-detection-tasks:
+    description: 查询检测任务、缺陷证据和处置状态。
+    instructions:
+      - 优先使用任务编号定位检测任务，并核对任务状态、模型和检测时间。
+      - 汇总缺陷类别、置信度、图片证据、复核和处置结果，不得编造缺失字段。
+      - 用户未提供任务编号时，说明需要的筛选条件或返回可核对的候选任务。
+  inspect-quality-workflow:
+    description: 分析质检复核、返工、隔离、放行和工单流程。
+    instructions:
+      - 只解释和查询当前流程状态，不执行返工、放行、隔离或报废操作。
+      - 涉及状态修改时明确交回主流程进行人工确认。
+  inspect-resources:
+    description: 查询设备、人员、模型及资源配置。
+    instructions:
+      - 核对设备在线状态、人员分配和模型版本，区分实时状态与静态配置。
+      - 资源冲突时列出冲突对象和可核对依据，不自行调整资源。
+  analyze-quality-reports:
+    description: 查询并解释质检统计、趋势和工作量报表。
+    instructions:
+      - 明确统计时间范围、指标口径和数据单位。
+      - 区分检测总量、合格率、缺陷率和人工复核结果，避免混用口径。
+  diagnose-platform-operations:
+    description: 查询系统运行状态、业务入口和故障定位信息。
+    instructions:
+      - 按服务状态、消息链路、存储和页面入口组织排查结论。
+      - 只返回诊断与导航建议，不执行命令、不修改配置。
+
+# 工具名称必须同时存在于 Python TRUSTED_TOOL_BINDINGS 白名单。
+tools:
+  query_detection:
+    target_agent: DETECTION
+    operation: query
+    description: 查询当前企业和当前用户有权访问的检测、缺陷、复核及处置数据。
+  query_resource:
+    target_agent: RESOURCE
+    operation: query
+    description: 查询当前企业的设备、人员、模型和资源状态。
+  query_report:
+    target_agent: REPORT
+    operation: query
+    description: 查询当前企业的质检报表、趋势、统计和工作量数据。
+  query_ops:
+    target_agent: OPS
+    operation: query
+    description: 查询平台运行状态、业务导航和故障诊断信息。
+
+subagents:
+  - id: DETECTION
+    name: detection-specialist
+    enabled: true
+    description: 检测与质检专家
+    responsibilities:
+      - 负责检测任务、缺陷证据、复核结果、处置状态和关联工单的只读查询。
+      - 识别缺失的任务编号、时间范围或状态条件，并向主 Agent 返回明确说明。
+      - 不负责设备调度、统计报表和系统运维。
+    skills:
+      - inspect-detection-tasks
+      - inspect-quality-workflow
+    tools:
+      - query_detection
+
+  - id: RESOURCE
+    name: resource-specialist
+    enabled: true
+    description: 资源与模型专家
+    responsibilities:
+      - 负责设备、人员、模型版本、在线状态和资源配置的只读查询。
+      - 发现资源冲突或离线状态时给出证据和排查方向。
+      - 不执行资源分配、模型发布或设备状态修改。
+    skills:
+      - inspect-resources
+    tools:
+      - query_resource
+
+  - id: REPORT
+    name: report-specialist
+    enabled: true
+    description: 报表与质量分析专家
+    responsibilities:
+      - 负责日报、周报、质量趋势、缺陷统计、产量和人员工作量查询。
+      - 解释统计口径、时间范围和指标之间的关系。
+      - 不修改检测任务、资源或报表原始数据。
+    skills:
+      - analyze-quality-reports
+    tools:
+      - query_report
+
+  - id: OPS
+    name: ops-specialist
+    enabled: true
+    description: 运维诊断与业务导航专家
+    responsibilities:
+      - 负责服务状态、消息链路、页面入口、操作流程和故障定位信息查询。
+      - 提供可执行的人工排查步骤，并标明无法从工具确认的信息。
+      - 不执行 Shell、不修改配置、不重启服务。
+    skills:
+      - diagnose-platform-operations
+    tools:
+      - query_ops

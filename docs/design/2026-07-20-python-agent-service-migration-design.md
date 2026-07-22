@@ -96,6 +96,7 @@ Python 接管：
 - 多轮上下文理解和意图分类。
 - 槽位提取、补全和任务阶段判断。
 - 主 Agent 对专业 Agent 的路由和执行编排。
+- 从受信 YAML 热加载子智能体职责、Skill 指令、启停状态与工具引用，并通过代码白名单校验真实工具绑定。
 - DeepSeek 等模型调用、提示词组织和结果解析。
 - RAG 检索和 Mem0 长期记忆读写。
 - 确定性结果质量检查、执行轨迹、运行守卫和安全回退回答。
@@ -108,6 +109,7 @@ Python 服务本身保持无核心业务状态：单次请求所需的 Checkpoin
 ```text
 python_assistant_service/
 ├── app/
+│   ├── agent_config.py   # YAML 子智能体模型、校验和热加载
 │   ├── api/              # FastAPI 内部接口
 │   ├── graph/            # LangGraph 定义、状态和守卫
 │   ├── agents/           # Detection/Resource/Report/Ops
@@ -116,6 +118,8 @@ python_assistant_service/
 │   ├── schemas/          # Pydantic 请求/响应模型
 │   ├── settings.py
 │   └── main.py
+├── config/
+│   └── subagents.yaml    # 子智能体职责、Skills 和工具声明
 ├── tests/
 ├── pyproject.toml
 ├── requirements.lock

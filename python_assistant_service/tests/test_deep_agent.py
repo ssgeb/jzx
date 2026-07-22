@@ -8,8 +8,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import PrivateAttr
 
+from python_assistant_service.app.agent_config import YamlSubagentLoader
 from python_assistant_service.app.deep_agent import (
-    AGENT_DESCRIPTIONS,
     FILESYSTEM_AND_EXECUTION_TOOLS,
     HarnessDeepAgent,
     ToolEvidence,
@@ -118,6 +118,28 @@ def test_deep_agent_model_is_independent_from_legacy_router_model():
     assert harness.available is True
 
 
+def test_invalid_subagent_yaml_disables_deep_agent_and_uses_fallback(tmp_path):
+    invalid = tmp_path / "subagents.yaml"
+    invalid.write_text("version: 1\nsubagents: []\n", encoding="utf-8")
+    factory = RecordingFactory()
+    harness = HarnessDeepAgent(
+        Settings(deep_agent_enabled=True),
+        RecordingTools(),
+        FixedKnowledge(),
+        FixedMemory(),
+        model=object(),
+        agent_factory=factory,
+        config_loader=YamlSubagentLoader(invalid),
+    )
+
+    result = asyncio.run(harness.invoke(build_message_state(request())))
+
+    assert harness.configuration_status == "SUBAGENT_CONFIG_INVALID"
+    assert harness.available is False
+    assert result is None
+    assert factory.calls == 0
+
+
 def test_harness_deep_agent_uses_four_restricted_subagents_and_fixed_java_tool():
     factory = RecordingFactory()
     tools = RecordingTools()
@@ -140,13 +162,23 @@ def test_harness_deep_agent_uses_four_restricted_subagents_and_fixed_java_tool()
     assert "实时数据" not in json.dumps(result["data_context"], ensure_ascii=False)
     assert factory.kwargs["tools"] == []
     assert factory.config == {"recursion_limit": 36}
+    catalog = harness._config_loader.load()
     assert {item["name"] for item in factory.kwargs["subagents"]} == {
-        value[0] for value in AGENT_DESCRIPTIONS.values()
+        item.name for item in catalog.enabled_subagents
     }
     for subagent in factory.kwargs["subagents"]:
         assert len(subagent["tools"]) == 1
         assert subagent["tools"][0].name.startswith("query_")
         assert subagent["tools"][0].name not in FILESYSTEM_AND_EXECUTION_TOOLS
+    detection = next(
+        item for item in factory.kwargs["subagents"]
+        if item["name"] == "detection-specialist"
+    )
+    assert "inspect-detection-tasks" in detection["system_prompt"]
+    assert "检测任务、缺陷证据、复核结果" in detection["system_prompt"]
+    assert "query_detection" in detection["system_prompt"]
+    assert "当前可委派子智能体" in factory.kwargs["system_prompt"]
+    assert "detection-specialist（检测与质检专家）" in factory.kwargs["system_prompt"]
 
     assert tools.calls[0][0:2] == ("DETECTION", "query")
     assert tools.calls[0][2]["tenantUserId"] == 42
@@ -193,19 +225,22 @@ def test_registered_harness_profile_hides_file_and_execution_tools_from_model():
         model=model,
     )
     state = build_message_state(request())
+    catalog = harness._config_loader.load()
     query_tools = {
-        agent: harness._build_query_tool(agent, state, "", "", ToolEvidence())
-        for agent in AGENT_DESCRIPTIONS
+        tool_name: harness._build_query_tool(
+            tool_name, definition, state, "", "", ToolEvidence()
+        )
+        for tool_name, definition in catalog.tools.items()
     }
     subagents = [
         {
-            "name": name,
-            "description": description,
-            "system_prompt": harness._subagent_prompt(agent, description),
-            "tools": [query_tools[agent]],
+            "name": subagent.name,
+            "description": subagent.description,
+            "system_prompt": harness._subagent_prompt(subagent, catalog),
+            "tools": [query_tools[name] for name in subagent.tools],
             "model": model,
         }
-        for agent, (name, description) in AGENT_DESCRIPTIONS.items()
+        for subagent in catalog.enabled_subagents
     ]
     graph = harness._agent_factory(
         model=model,
